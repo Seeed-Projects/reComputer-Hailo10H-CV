@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.pyc
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Models (large files, use Git LFS or upload separately)
+*.hef
+*.onnx
