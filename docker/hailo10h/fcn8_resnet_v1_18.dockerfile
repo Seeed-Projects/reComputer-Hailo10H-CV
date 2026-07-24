@@ -1,5 +1,3 @@
-# FCN8 ResNet-18 - Hailo-10H
-
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -11,8 +9,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+COPY hailort-packages/*.whl /tmp/
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential python3-dev \
+    && pip install --no-cache-dir /tmp/hailort-*.whl \
+    && apt-get purge -y --auto-remove build-essential python3-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -f /tmp/*.whl
+
 COPY . .
 
 EXPOSE 8000
 
-CMD ["python", "web_service.py"]
+CMD ["python", "web_detection.py", "--model_path", "model/fcn8_resnet_v1_18.hef", "--video_path", "video/test.mp4"]
