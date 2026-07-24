@@ -3,7 +3,7 @@ LightFace Slim - Face Detection Inference Server
 ==================================================
 Model: Ultra-Light-Fast-Generic-Face-Detector-1MB
 Input: 240x320 RGB, Output: Face bounding boxes
-Platform: Hailo-10H (Raspberry Pi CM5)
+Platform: Hailo-10H (Raspberry Pi 5)
 """
 
 import os, sys, cv2, argparse, numpy as np

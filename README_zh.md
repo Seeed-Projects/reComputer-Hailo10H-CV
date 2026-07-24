@@ -2,7 +2,7 @@
 
 [English](./README.md) | [中文]
 
-本项目为 reComputer R Series（树莓派 CM5）搭载 **Hailo-10H** 加速器提供工业级计算机视觉方案。模型来自 Hailo Model Zoo，通过 Docker 一键部署。
+本项目为 reComputer R Series（树莓派 5）搭载 **Hailo-10H** 加速器提供工业级计算机视觉方案。模型来自 Hailo Model Zoo，通过 Docker 一键部署。
 
 ## 项目架构
 
@@ -28,7 +28,7 @@ reComputer-Hailo10H-CV/
 
 | 平台 | 芯片 | 加速器 | 算力 |
 | :--- | :--- | :--- | :--- |
-| **reComputer R Series** | 树莓派 CM5 | Hailo-10H | 10 TOPS |
+| **reComputer R Series** | 树莓派 5 | Hailo-10H | 10 TOPS |
 
 ## 已收录模型
 

@@ -3,7 +3,7 @@ STDC1 - Semantic Segmentation Inference Server
 ==============================================
 Model: STDC1 (Short-Term Dense Concatenate)
 Input: 1024x1920 RGB, Output: 19-class mask (Cityscapes)
-Platform: Hailo-10H (Raspberry Pi CM5)
+Platform: Hailo-10H (Raspberry Pi 5)
 """
 
 import os, sys, cv2, argparse, numpy as np

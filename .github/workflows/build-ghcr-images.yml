@@ -96,7 +96,7 @@ jobs:
             type=sha,prefix=sha-
           labels: |
             org.opencontainers.image.title=${{ matrix.model }}
-            org.opencontainers.image.description=${{ matrix.description }} for Raspberry Pi CM5 + Hailo-10H
+            org.opencontainers.image.description=${{ matrix.description }} for Raspberry Pi 5 + Hailo-10H
             org.opencontainers.image.source=${{ env.SOURCE_REPOSITORY }}
             org.opencontainers.image.url=${{ env.SOURCE_REPOSITORY }}
 

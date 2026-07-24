@@ -3,7 +3,7 @@ MSPN RegNetX-800MF - Single Person Pose Estimation
 ====================================================
 Model: MSPN with RegNetX-800MF backbone
 Input: 256x192 RGB, Output: 17 COCO keypoints
-Platform: Hailo-10H (Raspberry Pi CM5)
+Platform: Hailo-10H (Raspberry Pi 5)
 """
 
 import os, sys, cv2, argparse, numpy as np

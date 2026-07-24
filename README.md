@@ -2,7 +2,7 @@
 
 [English] | [中文](./README_zh.md)
 
-This project provides industrial-grade Computer Vision (CV) solutions for the reComputer R Series (Raspberry Pi CM5) with **Hailo-10H** accelerator. Models are pre-compiled from the Hailo Model Zoo and packaged with Docker for one-click deployment.
+This project provides industrial-grade Computer Vision (CV) solutions for the reComputer R Series (Raspberry Pi 5) with **Hailo-10H** accelerator. Models are pre-compiled from the Hailo Model Zoo and packaged with Docker for one-click deployment.
 
 ## Project Architecture
 
@@ -28,7 +28,7 @@ reComputer-Hailo10H-CV/
 
 | Platform | Chip | Accelerator | Computing Power |
 | :--- | :--- | :--- | :--- |
-| **reComputer R Series** | Raspberry Pi CM5 | Hailo-10H | 10 TOPS |
+| **reComputer R Series** | Raspberry Pi 5 | Hailo-10H | 10 TOPS |
 
 ## Available Models
 

@@ -1,9 +1,9 @@
 """
 FCN8 ResNet-18 - Semantic Segmentation Inference Server
 ==============================================
-Model: FCN8 ResNet-18 (Short-Term Dense Concatenate)
+Model: FCN-8s with ResNet-18 backbone
 Input: 1024x1920 RGB, Output: 19-class mask (Cityscapes)
-Platform: Hailo-10H (Raspberry Pi CM5)
+Platform: Hailo-10H (Raspberry Pi 5)
 """
 
 import os, sys, cv2, argparse, numpy as np

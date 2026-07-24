@@ -1,7 +1,7 @@
 # Hailo-10H Model Zoo 模型迁移与一键镜像生成
 
 这份说明用于把 Hailo Model Zoo 里的 `.hef` 模型搬到本项目，并生成可在
-Raspberry Pi CM5 + Hailo-10H 上一键部署的 Docker 镜像。
+Raspberry Pi 5 + Hailo-10H 上一键部署的 Docker 镜像。
 
 ## 1. 先判断模型类型
 
@@ -70,7 +70,7 @@ docker/hailo10h/<model_slug>.dockerfile
 | `src/hailo10h_<model>/web_detection.py` | API 路径是否是 `/api/models/<model>/predict` |
 | `src/hailo10h_<model>/web_detection.py` | 是否使用 `argparse` 和 `HailoInfer` |
 
-## 5. 在 CM5 上构建镜像
+## 5. 在 Pi 5 上构建镜像
 
 ```bash
 cd src/hailo10h_stdc1
@@ -106,7 +106,7 @@ sudo docker run --rm --privileged --net=host \
 浏览器打开：
 
 ```text
-http://<CM5_IP>:8000
+http://<Pi5_IP>:8000
 ```
 
 ## 7. 常见问题
