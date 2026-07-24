@@ -1,8 +1,8 @@
 """
-LightFace Slim - Semantic Segmentation Inference Server
-==============================================
-Model: LightFace Slim (Short-Term Dense Concatenate)
-Input: 1024x1920 RGB, Output: 19-class mask (Cityscapes)
+LightFace Slim - Face Detection Inference Server
+==================================================
+Model: Ultra-Light-Fast-Generic-Face-Detector-1MB
+Input: 240x320 RGB, Output: Face bounding boxes
 Platform: Hailo-10H (Raspberry Pi CM5)
 """
 
@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse, Response
 import uvicorn
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--model_path", default=os.path.join(os.path.dirname(__file__), "model", "lightface.hef"))
+parser.add_argument("--model_path", default=os.path.join(os.path.dirname(__file__), "model", "lightface_slim.hef"))
 parser.add_argument("--video_path", default=None)
 parser.add_argument("--camera_id", type=int, default=None)
 args, _ = parser.parse_known_args()
@@ -20,24 +20,10 @@ args, _ = parser.parse_known_args()
 from py_utils.hailo_executor import HailoInfer
 
 MODEL_PATH = args.model_path
-INPUT_SIZE = (1920, 1024)
-NUM_CLASSES = 19
+INPUT_SIZE = (320, 240)
+CONF_THRESHOLD = 0.5
 
-CITYSCAPES_CLASSES = [
-    "road", "sidewalk", "building", "wall", "fence",
-    "pole", "traffic light", "traffic sign", "vegetation", "terrain",
-    "sky", "person", "rider", "car", "truck",
-    "bus", "train", "motorcycle", "bicycle"
-]
-
-CITYSCAPES_COLORS = [
-    (128, 64, 128), (244, 35, 232), (70, 70, 70), (102, 102, 156), (190, 153, 153),
-    (153, 153, 153), (250, 170, 30), (220, 220, 0), (107, 142, 35), (152, 251, 152),
-    (70, 130, 180), (220, 20, 60), (255, 0, 0), (0, 0, 142), (0, 0, 70),
-    (0, 60, 100), (0, 80, 100), (0, 0, 230), (119, 11, 32)
-]
-
-app = FastAPI(title="LightFace Slim Semantic Segmentation", version="1.0.0")
+app = FastAPI(title="LightFace Slim Face Detection", version="1.0.0")
 
 if os.path.exists(MODEL_PATH):
     infer = HailoInfer(MODEL_PATH)
@@ -50,34 +36,31 @@ def preprocess(image):
     img = cv2.resize(image, INPUT_SIZE)
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     img = img.astype(np.float32)
-    mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
-    std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
-    img = (img / 255.0 - mean) / std
+    img = (img - 127.0) / 128.0
     img = np.transpose(img, (2, 0, 1))
     return np.expand_dims(img, axis=0)
 
-def mask_to_color(mask):
-    h, w = mask.shape
-    cm = np.zeros((h, w, 3), dtype=np.uint8)
-    for i, c in enumerate(CITYSCAPES_COLORS):
-        cm[mask == i] = c
-    return cm
-
 def post_process_hailo(output, orig_shape):
-    logits = list(output.values())[0]
-    mask = np.argmax(logits[0], axis=0).astype(np.uint8)
+    detections = list(output.values())[0]
+    boxes = detections[0][:, :4]
+    confs = detections[0][:, 4]
     oh, ow = orig_shape[:2]
-    if (oh, ow) != (1024, 1920):
-        mask = cv2.resize(mask, (ow, oh), interpolation=cv2.INTER_NEAREST)
-    return mask
+    boxes[:, [0, 2]] *= ow / INPUT_SIZE[0]
+    boxes[:, [1, 3]] *= oh / INPUT_SIZE[1]
+    return boxes, confs
+
+def draw_boxes(image, boxes, confs):
+    vis = image.copy()
+    for box, conf in zip(boxes, confs):
+        if conf > CONF_THRESHOLD:
+            x1, y1, x2, y2 = box.astype(int)
+            cv2.rectangle(vis, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            cv2.putText(vis, f"{conf:.2f}", (x1, y1-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 1)
+    return vis
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "model": "lightface", "model_loaded": infer is not None}
-
-@app.get("/api/models/lightface/classes")
-async def get_classes():
-    return {"classes": [{"id": i, "name": n, "color": list(c)} for i, (n, c) in enumerate(zip(CITYSCAPES_CLASSES, CITYSCAPES_COLORS))]}
+    return {"status": "ok", "model": "lightface_slim", "model_loaded": infer is not None}
 
 @app.post("/api/models/lightface/predict")
 async def predict(file: UploadFile = File(...)):
@@ -89,12 +72,15 @@ async def predict(file: UploadFile = File(...)):
     input_tensor = preprocess(img)
     if infer is not None:
         output = infer.run((input_tensor * 255).astype(np.uint8))
-        mask = post_process_hailo(output, (oh, ow))
+        boxes, confs = post_process_hailo(output, (oh, ow))
     else:
-        mask = np.random.randint(0, NUM_CLASSES, (oh, ow), dtype=np.uint8)
-    unique, counts = np.unique(mask, return_counts=True)
-    stats = {CITYSCAPES_CLASSES[int(c)]: float(n / mask.size * 100) for c, n in zip(unique, counts)}
-    return {"mask": mask.tolist(), "width": ow, "height": oh, "num_classes": NUM_CLASSES, "stats": stats}
+        boxes = np.array([[ow*0.2, oh*0.2, ow*0.6, oh*0.6]])
+        confs = np.array([0.85])
+    faces = []
+    for box, conf in zip(boxes, confs):
+        if conf > CONF_THRESHOLD:
+            faces.append({"x1": float(box[0]), "y1": float(box[1]), "x2": float(box[2]), "y2": float(box[3]), "confidence": float(conf)})
+    return {"faces": faces, "count": len(faces)}
 
 @app.post("/api/models/lightface/visualize")
 async def visualize(file: UploadFile = File(...)):
@@ -106,11 +92,12 @@ async def visualize(file: UploadFile = File(...)):
     input_tensor = preprocess(img)
     if infer is not None:
         output = infer.run((input_tensor * 255).astype(np.uint8))
-        mask = post_process_hailo(output, (oh, ow))
+        boxes, confs = post_process_hailo(output, (oh, ow))
     else:
-        mask = np.random.randint(0, NUM_CLASSES, (oh, ow), dtype=np.uint8)
-    blended = cv2.addWeighted(cv2.resize(img, (ow, oh)), 0.5, mask_to_color(mask), 0.5, 0)
-    _, buf = cv2.imencode('.jpg', blended)
+        boxes = np.array([[ow*0.2, oh*0.2, ow*0.6, oh*0.6]])
+        confs = np.array([0.85])
+    vis = draw_boxes(img, boxes, confs)
+    _, buf = cv2.imencode('.jpg', vis)
     return Response(content=buf.tobytes(), media_type="image/jpeg")
 
 if __name__ == "__main__":
