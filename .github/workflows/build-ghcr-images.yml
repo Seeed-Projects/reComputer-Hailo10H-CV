@@ -51,6 +51,9 @@ jobs:
           - model: lightface_slim
             image: lightface_slim
             description: LightFace Slim face detection
+          - model: face_landmarks_lite
+            image: face_landmarks_lite
+            description: Face Landmarks Lite facial keypoint detection
 
     steps:
       - name: Select model
