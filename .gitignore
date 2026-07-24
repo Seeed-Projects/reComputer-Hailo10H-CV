@@ -9,3 +9,6 @@ __pycache__/
 # OS
 .DS_Store
 Thumbs.db
+
+# Docs (local only)
+docs/MODEL_DEVELOPMENT_SOP.md
