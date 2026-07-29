@@ -54,6 +54,24 @@ jobs:
           - model: face_landmarks_lite
             image: face_landmarks_lite
             description: Face Landmarks Lite facial keypoint detection
+          - model: yolo26n_seg
+            image: yolo26n_seg
+            description: YOLO26n-seg instance segmentation
+          - model: yolo26s_seg
+            image: yolo26s_seg
+            description: YOLO26s-seg instance segmentation
+          - model: yolo26m_seg
+            image: yolo26m_seg
+            description: YOLO26m-seg instance segmentation
+          - model: yolo26n_seg
+            image: yolo26n_seg
+            description: YOLO26n-seg instance segmentation
+          - model: yolo26s_seg
+            image: yolo26s_seg
+            description: YOLO26s-seg instance segmentation
+          - model: yolo26m_seg
+            image: yolo26m_seg
+            description: YOLO26m-seg instance segmentation
 
     steps:
       - name: Select model
