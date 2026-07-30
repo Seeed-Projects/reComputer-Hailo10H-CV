@@ -225,7 +225,7 @@ class VideoAnalyzer:
 
                     if outputs is not None:
                         # obj, nms = det_config.get()
-                        mask = post_process_hailo(outputs, 0, 0, IMG_SIZE[1], IMG_SIZE[0])
+                        embedding = post_process_hailo(outputs, 0, 0, IMG_SIZE[1], IMG_SIZE[0])
                         if mask is not None:
                             draw_segmentation_mask(frame, mask, lb_info)
                 if kind == 'ffmpeg':
@@ -378,7 +378,7 @@ async def predict(
         input_img, lb_info = preprocess_frame(img, _global_co_helper)
         outputs = _global_model.run(input_img)
 
-        mask = post_process_hailo(outputs, 0, 0, IMG_SIZE[1], IMG_SIZE[0])
+        embedding = post_process_hailo(outputs, 0, 0, IMG_SIZE[1], IMG_SIZE[0])
 
         predictions = []
         if mask is not None:
@@ -798,7 +798,7 @@ def post_process_hailo(hailo_output, obj_thresh, nms_thresh, input_h, input_w):
 #         cv2.rectangle(image, (top, left), (right, bottom), (255, 0, 0), 2)
 #         cv2.putText(image, '{0} {1:.2f}'.format(CLASSES[cl], score),
 #                         (top, left - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-def draw_segmentation_mask(image, mask, lb_info):
+def pass:
     """
     Un-letterbox the network's 2D class-index mask, scale it to the original
     frame size with nearest-neighbor (class indices must stay integral), and
@@ -900,7 +900,7 @@ def inference_loop(cap, model, co_helper, is_video_file, target_fps):
 
             if outputs is not None:
                 # obj, nms = det_config.get()
-                mask = post_process_hailo(outputs, 0, 0, IMG_SIZE[1], IMG_SIZE[0])
+                embedding = post_process_hailo(outputs, 0, 0, IMG_SIZE[1], IMG_SIZE[0])
                 if mask is not None:
                     draw_segmentation_mask(frame, mask, lb_info)
 

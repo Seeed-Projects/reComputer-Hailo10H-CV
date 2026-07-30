@@ -225,9 +225,9 @@ class VideoAnalyzer:
 
                     if outputs is not None:
                         # obj, nms = det_config.get()
-                        mask = post_process_hailo(outputs, 0, 0, IMG_SIZE[1], IMG_SIZE[0])
-                        if mask is not None:
-                            draw_segmentation_mask(frame, mask, lb_info)
+                        boxes, confs = post_process_hailo(outputs, 0, 0, IMG_SIZE[1], IMG_SIZE[0])
+                        if boxes is not None:
+                            draw_boxes(frame, boxes, confs, lb_info)
                 if kind == 'ffmpeg':
                     out.stdin.write(frame.tobytes())
                 else:
@@ -378,11 +378,11 @@ async def predict(
         input_img, lb_info = preprocess_frame(img, _global_co_helper)
         outputs = _global_model.run(input_img)
 
-        mask = post_process_hailo(outputs, 0, 0, IMG_SIZE[1], IMG_SIZE[0])
+        boxes, confs = post_process_hailo(outputs, 0, 0, IMG_SIZE[1], IMG_SIZE[0])
 
         predictions = []
-        if mask is not None:
-            draw_segmentation_mask(img, mask, lb_info)
+        if boxes is not None:
+            draw_boxes(img, boxes, confs, lb_info)
 
             # Summarize segmentation as per-class pixel coverage. The "confidence"
             # field carries the fraction of the network-input mask occupied by
@@ -802,55 +802,16 @@ def post_process_hailo(hailo_output, obj_thresh, nms_thresh, input_h, input_w):
 #         cv2.rectangle(image, (top, left), (right, bottom), (255, 0, 0), 2)
 #         cv2.putText(image, '{0} {1:.2f}'.format(CLASSES[cl], score),
 #                         (top, left - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-def draw_segmentation_mask(image, mask, lb_info):
-    """
-    Un-letterbox the network's 2D class-index mask, scale it to the original
-    frame size with nearest-neighbor (class indices must stay integral), and
-    alpha-blend a colored overlay onto `image` in place.
-
-    `lb_info` is the (ratio, dw, dh) tuple returned by preprocess_frame for
-    this exact frame; we cannot rely on co_helper.letter_box_info_list[-1]
-    because letterbox calls from other threads (e.g. VideoAnalyzer running
-    alongside the live preview) interleave into the same list.
-    """
-    if mask is None:
-        return image
-
-    orig_h, orig_w = image.shape[:2]
-    H, W = mask.shape
-
-    _, dw, dh = lb_info
-    # Replicate letter_box's int rounding so the crop matches the padding it
-    # added exactly. dw/dh come back as floats representing HALF the total
-    # padding; letter_box used round(dh-0.1) for top and round(dh+0.1) for
-    # bottom (and likewise for left/right) to absorb the odd-pixel case.
-    top = int(round(dh - 0.1))
-    bottom = int(round(dh + 0.1))
-    left = int(round(dw - 0.1))
-    right = int(round(dw + 0.1))
-
-    h_end = H - bottom if bottom > 0 else H
-    w_end = W - right if right > 0 else W
-    content_mask = mask[top:h_end, left:w_end]
-
-    full_scale_mask = cv2.resize(content_mask, (orig_w, orig_h),
-                                 interpolation=cv2.INTER_NEAREST)
-
-    max_label_present = max(len(CLASSES), int(full_scale_mask.max()) + 1)
-    colors = np.zeros((max_label_present, 3), dtype=np.uint8)
-    palette_len = min(len(CITYSCAPES_PALETTE), len(colors))
-    colors[:palette_len] = CITYSCAPES_PALETTE[:palette_len]
-    if len(colors) > palette_len:
-        rng = np.random.default_rng(42)
-        colors[palette_len:] = rng.integers(0, 255, size=(len(colors) - palette_len, 3), dtype=np.uint8)
-
-    color_mask = colors[full_scale_mask]
-
-    alpha = 0.4
-    mask_indices = full_scale_mask != 255
-    image[mask_indices] = cv2.addWeighted(image, 1 - alpha, color_mask, alpha, 0)[mask_indices]
-
-    return image
+def draw_boxes(image, boxes, confs, lb_info=None):
+    if boxes is None:
+        return
+    h, w = image.shape[:2]
+    for i, box in enumerate(boxes):
+        if confs[i] < 0.5:
+            continue
+        x1, y1, x2, y2 = box.astype(int)
+        cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        cv2.putText(image, f"{confs[i]:.2f}", (x1, y1-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 1)
 
 def preprocess_frame(frame, co_helper):
     """Letterbox + BGR to RGB. Returns (img, lb_info) where lb_info captures the
@@ -904,9 +865,9 @@ def inference_loop(cap, model, co_helper, is_video_file, target_fps):
 
             if outputs is not None:
                 # obj, nms = det_config.get()
-                mask = post_process_hailo(outputs, 0, 0, IMG_SIZE[1], IMG_SIZE[0])
-                if mask is not None:
-                    draw_segmentation_mask(frame, mask, lb_info)
+                boxes, confs = post_process_hailo(outputs, 0, 0, IMG_SIZE[1], IMG_SIZE[0])
+                if boxes is not None:
+                    draw_boxes(frame, boxes, confs, lb_info)
 
             inf_fps = 1.0 / inference_time if inference_time > 0 else 0
             fps_counter = 0.9 * fps_counter + 0.1 * inf_fps if fps_counter > 0 else inf_fps
