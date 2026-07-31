@@ -9,8 +9,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY hailort-packages/hailort-5.1.1-cp313-cp313-linux_aarch64.whl /tmp/
-RUN pip install --no-cache-dir /tmp/hailort-5.1.1-cp313-cp313-linux_aarch64.whl && rm -f /tmp/*.whl
+COPY hailort-packages/hailo_platform /usr/local/lib/python3.13/site-packages/hailo_platform
+COPY hailort-packages/hailort-5.1.1.egg-info /usr/local/lib/python3.13/site-packages/hailort-5.1.1.egg-info
 
 COPY . .
 
