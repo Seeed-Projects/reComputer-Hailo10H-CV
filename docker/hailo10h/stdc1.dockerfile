@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.13-slim
 
 WORKDIR /app
 
@@ -9,15 +9,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY hailort-packages/ /tmp/hailort-packages/
-RUN if ls /tmp/hailort-packages/hailort-*.whl 1>/dev/null 2>&1; then \
-      apt-get update && apt-get install -y --no-install-recommends \
-        build-essential python3-dev \
-      && pip install --no-cache-dir /tmp/hailort-packages/hailort-*.whl \
-      && apt-get purge -y --auto-remove build-essential python3-dev \
-      && rm -rf /var/lib/apt/lists/*; \
-    fi; \
-    rm -rf /tmp/hailort-packages
+COPY hailort-packages/hailort-5.1.1-cp313-cp313-linux_aarch64.whl /tmp/
+RUN pip install --no-cache-dir /tmp/hailort-5.1.1-cp313-cp313-linux_aarch64.whl && rm -f /tmp/*.whl
 
 COPY . .
 
