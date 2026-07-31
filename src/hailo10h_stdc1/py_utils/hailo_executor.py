@@ -1,45 +1,28 @@
 import numpy as np
 
-from hailo_platform import (
-    HEF,
-    VDevice,
-    FormatType,
-    HailoStreamInterface,
-    ConfigureParams,
-    InferVStreams,
-    InputVStreamParams,
-    OutputVStreamParams,
-)
+from hailo_platform import VDevice
 
 
 class HailoInfer:
     def __init__(self, hef_path):
-        self.hef = HEF(hef_path)
         self.target = VDevice()
 
-        cfg = ConfigureParams.create_from_hef(
-            hef=self.hef, interface=HailoStreamInterface.PCIe
-        )
-        self.network_group = self.target.configure(self.hef, cfg)[0]
-        self.ng_params = self.network_group.create_params()
+        # HailoRT 5.x new API (Hailo-10H compatible)
+        self.model = self.target.create_infer_model(hef_path)
 
-        self.input_info = self.hef.get_input_vstream_infos()[0]
-        self.output_infos = self.hef.get_output_vstream_infos()
-        self.input_h, self.input_w, _ = self.input_info.shape
+        self.input_info = self.model.input()
+        self.output_info = self.model.output()
 
-        in_p = InputVStreamParams.make(
-            self.network_group, format_type=FormatType.UINT8
-        )
-        out_p = OutputVStreamParams.make(
-            self.network_group, format_type=FormatType.FLOAT32
-        )
+        # Shape may be (H, W, C) or (N, H, W, C) depending on API version
+        shape = self.input_info.shape
+        if len(shape) == 4:
+            self.input_h, self.input_w = shape[1], shape[2]
+        else:
+            self.input_h, self.input_w = shape[0], shape[1]
 
-        # Hold activation + pipeline for the lifetime of the wrapper.
-        # Rebuilding them per-frame collapses FPS to single digits.
-        self._act = self.network_group.activate(self.ng_params)
-        self._act.__enter__()
-        self._pipe_ctx = InferVStreams(self.network_group, in_p, out_p)
-        self._pipe = self._pipe_ctx.__enter__()
+        print(f"Hailo infer model loaded: {hef_path}")
+        print(f"  Input:  {self.input_info.name} shape={self.input_info.shape}")
+        print(f"  Output: {self.output_info.name} shape={self.output_info.shape}")
 
     def run(self, image):
         if image.dtype != np.uint8:
@@ -47,21 +30,15 @@ class HailoInfer:
         if image.ndim == 3:
             image = np.expand_dims(image, axis=0)
 
-        try:
-            return self._pipe.infer({self.input_info.name: image})
-        except Exception as e:
-            print(f"Hailo inference error: {e}")
-            return None
+        with self.model.configure() as configured_model:
+            bindings = configured_model.create_bindings()
+            bindings.input().set_buffer(image)
+            configured_model.run(bindings, timeout_ms=10000)
+            output = bindings.output().get_buffer()
+
+        return {self.output_info.name: output}
 
     def release(self):
-        try:
-            self._pipe_ctx.__exit__(None, None, None)
-        except Exception:
-            pass
-        try:
-            self._act.__exit__(None, None, None)
-        except Exception:
-            pass
         try:
             self.target.release()
         except Exception:
