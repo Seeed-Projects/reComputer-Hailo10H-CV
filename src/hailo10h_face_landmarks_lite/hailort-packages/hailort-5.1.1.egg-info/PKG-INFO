@@ -1,0 +1,16 @@
+Metadata-Version: 2.4
+Name: hailort
+Version: 5.1.1
+Summary: HailoRT
+Home-page: https://hailo.ai/
+Author: Hailo team
+Author-email: contact@hailo.ai
+Platform: linux_x86_64
+Platform: linux_aarch64
+Requires-Dist: numpy
+Dynamic: author
+Dynamic: author-email
+Dynamic: home-page
+Dynamic: platform
+Dynamic: requires-dist
+Dynamic: summary

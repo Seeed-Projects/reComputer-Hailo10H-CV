@@ -387,16 +387,15 @@ async def predict(
             # Summarize segmentation as per-class pixel coverage. The "confidence"
             # field carries the fraction of the network-input mask occupied by
             # each class so existing API consumers see a familiar shape.
-            class_ids, counts = np.unique(mask, return_counts=True)
-            total = float(mask.size)
-            for cl, n in zip(class_ids, counts):
-                if cl == 255 or cl >= len(CLASSES):
-                    continue
-                predictions.append({
-                    "class": CLASSES[int(cl)],
-                    "confidence": float(n) / total,
-                    "pixels": int(n),
-                })
+            for i, box in enumerate(boxes):
+                if confs[i] > 0.5:
+                    predictions.append({
+                        "x1": float(box[0]),
+                        "y1": float(box[1]),
+                        "x2": float(box[2]),
+                        "y2": float(box[3]),
+                        "confidence": float(confs[i])
+                    })
 
         return {
             "success": True,
