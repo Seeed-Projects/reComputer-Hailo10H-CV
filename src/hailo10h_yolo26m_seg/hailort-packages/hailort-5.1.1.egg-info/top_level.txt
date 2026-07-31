@@ -1,2 +1,0 @@
-_pyhailort
-hailo_platform
