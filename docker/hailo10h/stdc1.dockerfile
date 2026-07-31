@@ -1,3 +1,4 @@
+# rebuild for hailort 5.1.1
 FROM python:3.13-slim
 
 WORKDIR /app
