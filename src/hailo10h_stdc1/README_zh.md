@@ -22,6 +22,7 @@ docker build -t stdc1 -f docker/hailo10h/stdc1.dockerfile .
 # 运行（需要 Hailo-10H 硬件）
 sudo docker run --rm --privileged --net=host \
   --device /dev/hailo0:/dev/hailo0 \
+  -v /usr/lib/libhailort.so.5.1.1:/usr/lib/libhailort.so.5.1.1:ro \
   -v /usr/lib/libhailort.so:/usr/lib/libhailort.so:ro \
   stdc1
 ```

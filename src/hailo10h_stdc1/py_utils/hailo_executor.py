@@ -33,7 +33,7 @@ class HailoInfer:
         with self.model.configure() as configured_model:
             bindings = configured_model.create_bindings()
             bindings.input().set_buffer(image)
-            configured_model.run(bindings, timeout_ms=10000)
+            configured_model.run(bindings, timeout=10)
             output = bindings.output().get_buffer()
 
         return {self.output_info.name: output}
