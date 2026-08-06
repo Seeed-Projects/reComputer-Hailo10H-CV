@@ -14,6 +14,34 @@ class _ModelInfo:
     def __init__(self, name, shape):
         self.name = name
         self.shape = shape
+        self.format_type = None
+
+    def set_format_type(self, format_type):
+        self.format_type = format_type
+
+
+class _FormatType:
+    def __str__(self):
+        return "FormatType.UINT8"
+
+
+class _Format:
+    def __init__(self):
+        self.type = _FormatType()
+
+
+class _OutputVStreamInfo:
+    def __init__(self):
+        self.name = "stdc1/argmax1"
+        self.format = _Format()
+
+
+class _HEF:
+    def __init__(self, hef_path):
+        self.hef_path = hef_path
+
+    def get_output_vstream_infos(self):
+        return [_OutputVStreamInfo()]
 
 
 class _BindingStream:
@@ -28,22 +56,21 @@ class _BindingStream:
 
 
 class _Bindings:
-    def __init__(self):
+    def __init__(self, output_buffers):
         self.input_stream = _BindingStream()
-        self.output_stream = _BindingStream(
-            np.zeros((1, 1024, 1920), dtype=np.uint8)
-        )
+        self.output_stream = _BindingStream(output_buffers["stdc1/argmax1"])
 
     def input(self):
         return self.input_stream
 
-    def output(self):
+    def output(self, name=None):
         return self.output_stream
 
 
 class _ConfiguredModel:
     def __init__(self):
-        self.bindings = _Bindings()
+        self.bindings = None
+        self.output_buffers = None
         self.run_bindings = None
         self.run_timeout = None
 
@@ -53,7 +80,9 @@ class _ConfiguredModel:
     def __exit__(self, exc_type, exc_value, traceback):
         return False
 
-    def create_bindings(self):
+    def create_bindings(self, output_buffers=None):
+        self.output_buffers = output_buffers
+        self.bindings = _Bindings(output_buffers)
         return self.bindings
 
     def run(self, bindings, timeout):
@@ -95,6 +124,7 @@ class HailoExecutorTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         hailo_platform = types.ModuleType("hailo_platform")
+        hailo_platform.HEF = _HEF
         hailo_platform.VDevice = _VDevice
         sys.modules["hailo_platform"] = hailo_platform
 
@@ -107,7 +137,7 @@ class HailoExecutorTest(unittest.TestCase):
     def setUp(self):
         _VDevice.instances.clear()
 
-    def test_single_binding_is_wrapped_and_timeout_is_milliseconds(self):
+    def test_output_buffer_is_registered_before_single_frame_run(self):
         infer = self.executor.HailoInfer("model/stdc1.hef")
         image = np.zeros((1024, 1920, 3), dtype=np.uint8)
 
@@ -116,8 +146,23 @@ class HailoExecutorTest(unittest.TestCase):
         configured = _VDevice.instances[-1].model.configured_model
         self.assertEqual(configured.run_bindings, [configured.bindings])
         self.assertEqual(configured.run_timeout, 10_000)
-        self.assertEqual(configured.bindings.input_stream.buffer.shape, (1, 1024, 1920, 3))
-        self.assertIn("stdc1/argmax1", outputs)
+        self.assertEqual(
+            configured.bindings.input_stream.buffer.shape,
+            (1, 1024, 1920, 3),
+        )
+        self.assertEqual(set(configured.output_buffers), {"stdc1/argmax1"})
+        self.assertEqual(
+            configured.output_buffers["stdc1/argmax1"].shape,
+            (1024, 1920),
+        )
+        self.assertEqual(
+            configured.output_buffers["stdc1/argmax1"].dtype,
+            np.dtype("uint8"),
+        )
+        self.assertIs(
+            outputs["stdc1/argmax1"],
+            configured.output_buffers["stdc1/argmax1"],
+        )
 
 
 if __name__ == "__main__":
