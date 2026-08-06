@@ -3,6 +3,9 @@ import numpy as np
 from hailo_platform import VDevice
 
 
+INFERENCE_TIMEOUT_MS = 10_000
+
+
 class HailoInfer:
     def __init__(self, hef_path):
         self.target = VDevice()
@@ -33,7 +36,9 @@ class HailoInfer:
         with self.model.configure() as configured_model:
             bindings = configured_model.create_bindings()
             bindings.input().set_buffer(image)
-            configured_model.run(bindings, timeout=10)
+            # HailoRT 5.1.1 expects an iterable of Bindings, even for a
+            # single-frame inference. The timeout unit is milliseconds.
+            configured_model.run([bindings], timeout=INFERENCE_TIMEOUT_MS)
             output = bindings.output().get_buffer()
 
         return {self.output_info.name: output}
