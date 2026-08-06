@@ -21,6 +21,10 @@ on:
           - fcn8_resnet_v1_18
           - mspn_regnetx_800mf
           - lightface_slim
+          - face_landmarks_lite
+          - yolo26n_seg
+          - yolo26s_seg
+          - yolo26m_seg
 
 permissions:
   contents: read
@@ -63,30 +67,45 @@ jobs:
           - model: yolo26m_seg
             image: yolo26m_seg
             description: YOLO26m-seg instance segmentation
-          - model: yolo26n_seg
-            image: yolo26n_seg
-            description: YOLO26n-seg instance segmentation
-          - model: yolo26s_seg
-            image: yolo26s_seg
-            description: YOLO26s-seg instance segmentation
-          - model: yolo26m_seg
-            image: yolo26m_seg
-            description: YOLO26m-seg instance segmentation
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Select model
         id: selected
         shell: bash
         run: |
-          if [[ "${{ github.event_name }}" != "workflow_dispatch" || "${{ github.event.inputs.model }}" == "all" || "${{ github.event.inputs.model }}" == "${{ matrix.model }}" ]]; then
-            echo "build=true" >> "$GITHUB_OUTPUT"
+          build=false
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            if [[ "${{ github.event.inputs.model }}" == "all" || "${{ github.event.inputs.model }}" == "${{ matrix.model }}" ]]; then
+              build=true
+            fi
           else
-            echo "build=false" >> "$GITHUB_OUTPUT"
+            before_sha="${{ github.event.before }}"
+            current_sha="${{ github.sha }}"
+
+            if [[ -z "$before_sha" || "$before_sha" =~ ^0+$ ]] || ! git cat-file -e "${before_sha}^{commit}" 2>/dev/null; then
+              changed_files="$(git show --pretty=format: --name-only "$current_sha")"
+            else
+              changed_files="$(git diff --name-only "$before_sha" "$current_sha")"
+            fi
+
+            echo "Changed files:"
+            echo "$changed_files"
+
+            if echo "$changed_files" | grep -Fxq ".github/workflows/build-ghcr-images.yml"; then
+              build=true
+            elif echo "$changed_files" | grep -Eq "^src/hailo10h_${{ matrix.model }}/|^docker/hailo10h/${{ matrix.model }}\\.dockerfile$"; then
+              build=true
+            fi
           fi
 
-      - name: Checkout
-        if: steps.selected.outputs.build == 'true'
-        uses: actions/checkout@v4
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "Build ${{ matrix.model }}: $build"
 
       - name: Set up QEMU
         if: steps.selected.outputs.build == 'true'

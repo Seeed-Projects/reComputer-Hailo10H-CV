@@ -33,7 +33,7 @@ lightface_slim.hef
 
 - `.hef` 必须是 `hailo10h` 目标，不是 `hailo8` 或 `hailo8l`。
 - 宿主机 `hailo-h10-all`、容器里的 `hailort` wheel、固件版本必须一致。
-- Hailo-10H 的 HailoRT 版本为 5.x（当前项目使用 5.3.0 wheel）。
+- Hailo-10H 的 HailoRT 版本为 5.x（当前项目使用 5.1.1 wheel）。
 - 类别顺序必须和模型训练数据一致；非 COCO/VOC 模型建议额外准备 `class_config.txt`。
 
 ## 3. 创建项目模块
