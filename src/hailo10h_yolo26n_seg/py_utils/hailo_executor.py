@@ -1,3 +1,5 @@
+import threading
+
 import numpy as np
 
 from hailo_platform import HEF, VDevice
@@ -7,15 +9,17 @@ INFERENCE_TIMEOUT_MS = 10_000
 
 
 class HailoInfer:
-    """Multi-output HailoRT 5.x executor (Hailo-10H compatible).
+    """Persistent HailoRT 5.1.1 inference session.
 
-    Supports any number of output vstreams: single-output models get the
-    familiar `{name: array}` dict, multi-output models (e.g. yolo26_seg with
-    10 heads) get one buffer per output name.
+    HailoRT model configuration is intentionally kept alive for the lifetime
+    of this wrapper. Configuring the model and rebuilding bindings per frame
+    adds enough host overhead to collapse real-time throughput.
     """
 
     def __init__(self, hef_path):
         self.target = VDevice()
+        self._run_lock = threading.Lock()
+        self._released = False
 
         # HailoRT 5.x new API (Hailo-10H compatible)
         self.hef = HEF(hef_path)
@@ -23,7 +27,6 @@ class HailoInfer:
 
         self.input_info = self.model.input()
 
-        # Enumerate ALL output vstreams (single- or multi-output models).
         output_vstream_infos = self.hef.get_output_vstream_infos()
         if not output_vstream_infos:
             raise ValueError("Model has no output vstreams")
@@ -39,8 +42,6 @@ class HailoInfer:
                 raise ValueError(
                     f"Unsupported Hailo output format: {output_format_type}"
                 ) from exc
-            # Make the configured output format match the HEF metadata used
-            # to allocate the output buffer at run time.
             self.model.output(info.name).set_format_type(output_format_type)
             self.output_names.append(info.name)
             self._output_dtypes[info.name] = dtype
@@ -57,36 +58,49 @@ class HailoInfer:
         for name in self.output_names:
             print(f"  Output: {name} shape={self.model.output(name).shape}")
 
+        # HailoRT 5.1.1 InferModel API: enter the configuration context once,
+        # then reuse the configured model, bindings and device-side pipeline.
+        self._configured_context = self.model.configure()
+        self._configured_model = self._configured_context.__enter__()
+        self._output_buffers = {
+            name: np.empty(
+                self.model.output(name).shape,
+                dtype=self._output_dtypes[name],
+            )
+            for name in self.output_names
+        }
+        self._bindings = self._configured_model.create_bindings(
+            output_buffers=self._output_buffers
+        )
+
     def run(self, image):
         if image.dtype != np.uint8:
             image = image.astype(np.uint8)
         if image.ndim == 3:
             image = np.expand_dims(image, axis=0)
 
-        with self.model.configure() as configured_model:
-            output_buffers = {
-                name: np.empty(
-                    self.model.output(name).shape,
-                    dtype=self._output_dtypes[name],
-                )
-                for name in self.output_names
-            }
-            bindings = configured_model.create_bindings(
-                output_buffers=output_buffers
+        # Preview, REST and offline analysis can call the same executor from
+        # different threads. One persistent binding set is therefore guarded,
+        # and outputs are copied before the lock is released so a later frame
+        # cannot overwrite data that is still being post-processed.
+        with self._run_lock:
+            if self._released:
+                raise RuntimeError("HailoInfer has already been released")
+            self._bindings.input().set_buffer(image)
+            self._configured_model.run(
+                [self._bindings], timeout=INFERENCE_TIMEOUT_MS
             )
-            bindings.input().set_buffer(image)
-            # HailoRT 5.1.1 expects an iterable of Bindings, even for a
-            # single-frame inference. The timeout unit is milliseconds.
-            configured_model.run([bindings], timeout=INFERENCE_TIMEOUT_MS)
-            outputs = {
-                name: bindings.output(name).get_buffer()
+            return {
+                name: self._bindings.output(name).get_buffer().copy()
                 for name in self.output_names
             }
-
-        return outputs
 
     def release(self):
-        try:
-            self.target.release()
-        except Exception:
-            pass
+        with self._run_lock:
+            if self._released:
+                return
+            try:
+                self._configured_context.__exit__(None, None, None)
+            finally:
+                self.target.release()
+                self._released = True
