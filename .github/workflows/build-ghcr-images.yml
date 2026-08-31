@@ -17,6 +17,7 @@ on:
         type: choice
         options:
           - all
+          - arcface_mobilefacenet
           - stdc1
           - fcn8_resnet_v1_18
           - mspn_regnetx_800mf
@@ -43,6 +44,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - model: arcface_mobilefacenet
+            image: arcface_mobilefacenet
+            description: ArcFace MobileFaceNet face embedding extraction
           - model: stdc1
             image: stdc1
             description: STDC1 semantic segmentation

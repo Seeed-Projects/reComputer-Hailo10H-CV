@@ -14,11 +14,14 @@ MSPN (Multi-Stage Pose Network) with RegNetX-800MF backbone for single-person po
 
 ## Quick Start
 
+Runtime baseline: Python 3.13 and HailoRT 5.1.1. Run the build command from the repository root.
+
 ```bash
-docker build -t mspn -f docker/hailo10h/mspn_regnetx_800mf.dockerfile .
+docker build -t mspn -f docker/hailo10h/mspn_regnetx_800mf.dockerfile src/hailo10h_mspn_regnetx_800mf
 
 sudo docker run --rm --privileged --net=host \
   --device /dev/hailo0:/dev/hailo0 \
+  -v /usr/lib/libhailort.so.5.1.1:/usr/lib/libhailort.so.5.1.1:ro \
   -v /usr/lib/libhailort.so:/usr/lib/libhailort.so:ro \
   mspn
 ```
@@ -27,10 +30,9 @@ sudo docker run --rm --privileged --net=host \
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/health` | GET | Health check |
-| `/api/models/mspn_pose/predict` | POST | Keypoints (JSON) |
-| `/api/models/mspn_pose/visualize` | POST | Pose overlay (JPEG) |
-| `/api/models/mspn_pose/keypoints` | GET | Keypoint definitions |
+| `/` | GET | Web preview |
+| `/api/video_feed` | GET | MJPEG stream |
+| `/api/models/mspn_regnetx_800mf/predict` | POST | 17 COCO keypoints (JSON) |
 
 ## Source
 

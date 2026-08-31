@@ -15,11 +15,14 @@ ArcFace + MobileFaceNet（2.04M 参数），Hailo-10H 平台。
 
 ## 快速开始
 
+运行时基线：Python 3.13、HailoRT 5.1.1。请在仓库根目录执行构建命令。
+
 ```bash
-docker build -t arcface -f docker/hailo10h/arcface_mobilefacenet.dockerfile .
+docker build -t arcface -f docker/hailo10h/arcface_mobilefacenet.dockerfile src/hailo10h_arcface_mobilefacenet
 
 sudo docker run --rm --privileged --net=host \
   --device /dev/hailo0:/dev/hailo0 \
+  -v /usr/lib/libhailort.so.5.1.1:/usr/lib/libhailort.so.5.1.1:ro \
   -v /usr/lib/libhailort.so:/usr/lib/libhailort.so:ro \
   arcface
 ```
@@ -28,9 +31,9 @@ sudo docker run --rm --privileged --net=host \
 
 | 接口 | 方法 | 说明 |
 |------|------|------|
-| `/health` | GET | 健康检查 |
-| `/api/models/arcface/predict` | POST | 人脸嵌入向量 (JSON) |
-| `/api/models/arcface/compare` | POST | 人脸比对 (JSON) |
+| `/` | GET | Web 预览 |
+| `/api/video_feed` | GET | MJPEG 视频流 |
+| `/api/models/arcface_mobilefacenet/predict` | POST | 512 维人脸嵌入向量 (JSON) |
 
 ## 来源
 

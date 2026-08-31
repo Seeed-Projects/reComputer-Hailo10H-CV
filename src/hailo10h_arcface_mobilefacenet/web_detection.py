@@ -226,8 +226,8 @@ class VideoAnalyzer:
                     if outputs is not None:
                         # obj, nms = det_config.get()
                         embedding = post_process_hailo(outputs, 0, 0, IMG_SIZE[1], IMG_SIZE[0])
-                        if mask is not None:
-                            draw_segmentation_mask(frame, mask, lb_info)
+                        if embedding is not None:
+                            draw_embedding_status(frame, embedding)
                 if kind == 'ffmpeg':
                     out.stdin.write(frame.tobytes())
                 else:
@@ -380,28 +380,16 @@ async def predict(
 
         embedding = post_process_hailo(outputs, 0, 0, IMG_SIZE[1], IMG_SIZE[0])
 
-        predictions = []
-        if mask is not None:
-            draw_segmentation_mask(img, mask, lb_info)
+        if embedding is None:
+            return {"success": False, "message": "Model returned no embedding"}
 
-            # Summarize segmentation as per-class pixel coverage. The "confidence"
-            # field carries the fraction of the network-input mask occupied by
-            # each class so existing API consumers see a familiar shape.
-            class_ids, counts = np.unique(mask, return_counts=True)
-            total = float(mask.size)
-            for cl, n in zip(class_ids, counts):
-                if cl == 255 or cl >= len(CLASSES):
-                    continue
-                predictions.append({
-                    "class": CLASSES[int(cl)],
-                    "confidence": float(n) / total,
-                    "pixels": int(n),
-                })
+        draw_embedding_status(img, embedding)
 
         return {
             "success": True,
             "source": source_info,
-            "predictions": predictions,
+            "embedding": [float(value) for value in embedding],
+            "dimension": int(embedding.size),
             "image": {
                 "width": w,
                 "height": h
@@ -792,60 +780,19 @@ def post_process_hailo(hailo_output, obj_thresh, nms_thresh, input_h, input_w):
     return embedding
 
 
-# def draw(image, boxes, scores, classes):
-#     for box, score, cl in zip(boxes, scores, classes):
-#         top, left, right, bottom = [int(_b) for _b in box]
-#         cv2.rectangle(image, (top, left), (right, bottom), (255, 0, 0), 2)
-#         cv2.putText(image, '{0} {1:.2f}'.format(CLASSES[cl], score),
-#                         (top, left - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-def pass:
-    """
-    Un-letterbox the network's 2D class-index mask, scale it to the original
-    frame size with nearest-neighbor (class indices must stay integral), and
-    alpha-blend a colored overlay onto `image` in place.
-
-    `lb_info` is the (ratio, dw, dh) tuple returned by preprocess_frame for
-    this exact frame; we cannot rely on co_helper.letter_box_info_list[-1]
-    because letterbox calls from other threads (e.g. VideoAnalyzer running
-    alongside the live preview) interleave into the same list.
-    """
-    if mask is None:
+def draw_embedding_status(image, embedding):
+    """Annotate preview frames without pretending an embedding is a detection."""
+    if embedding is None:
         return image
-
-    orig_h, orig_w = image.shape[:2]
-    H, W = mask.shape
-
-    _, dw, dh = lb_info
-    # Replicate letter_box's int rounding so the crop matches the padding it
-    # added exactly. dw/dh come back as floats representing HALF the total
-    # padding; letter_box used round(dh-0.1) for top and round(dh+0.1) for
-    # bottom (and likewise for left/right) to absorb the odd-pixel case.
-    top = int(round(dh - 0.1))
-    bottom = int(round(dh + 0.1))
-    left = int(round(dw - 0.1))
-    right = int(round(dw + 0.1))
-
-    h_end = H - bottom if bottom > 0 else H
-    w_end = W - right if right > 0 else W
-    content_mask = mask[top:h_end, left:w_end]
-
-    full_scale_mask = cv2.resize(content_mask, (orig_w, orig_h),
-                                 interpolation=cv2.INTER_NEAREST)
-
-    max_label_present = max(len(CLASSES), int(full_scale_mask.max()) + 1)
-    colors = np.zeros((max_label_present, 3), dtype=np.uint8)
-    palette_len = min(len(CITYSCAPES_PALETTE), len(colors))
-    colors[:palette_len] = CITYSCAPES_PALETTE[:palette_len]
-    if len(colors) > palette_len:
-        rng = np.random.default_rng(42)
-        colors[palette_len:] = rng.integers(0, 255, size=(len(colors) - palette_len, 3), dtype=np.uint8)
-
-    color_mask = colors[full_scale_mask]
-
-    alpha = 0.4
-    mask_indices = full_scale_mask != 255
-    image[mask_indices] = cv2.addWeighted(image, 1 - alpha, color_mask, alpha, 0)[mask_indices]
-
+    cv2.putText(
+        image,
+        f"ArcFace embedding: {embedding.size}D",
+        (20, 75),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.8,
+        (0, 255, 0),
+        2,
+    )
     return image
 
 def preprocess_frame(frame, co_helper):
@@ -901,8 +848,8 @@ def inference_loop(cap, model, co_helper, is_video_file, target_fps):
             if outputs is not None:
                 # obj, nms = det_config.get()
                 embedding = post_process_hailo(outputs, 0, 0, IMG_SIZE[1], IMG_SIZE[0])
-                if mask is not None:
-                    draw_segmentation_mask(frame, mask, lb_info)
+                if embedding is not None:
+                    draw_embedding_status(frame, embedding)
 
             inf_fps = 1.0 / inference_time if inference_time > 0 else 0
             fps_counter = 0.9 * fps_counter + 0.1 * inf_fps if fps_counter > 0 else inf_fps
@@ -942,7 +889,7 @@ def encode_loop(preview_w, preview_h, jpeg_quality):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='STDC1 B0 BN semantic segmentation on CM5 + Hailo-10H (Web Preview Mode)')
+    parser = argparse.ArgumentParser(description='ArcFace MobileFaceNet embedding extraction on CM5 + Hailo-10H (Web Preview Mode)')
     parser.add_argument('--model_path', type=str, required=True, help='Path to .hef model (Hailo Executable Format)')
     parser.add_argument('--camera_id', type=int, default=0, help='Camera device ID (default: 0 for /dev/video0). Use -1 to disable camera and run web-only mode.')
     parser.add_argument('--video_path', type=str, help='Path to video file (overrides camera_id)')

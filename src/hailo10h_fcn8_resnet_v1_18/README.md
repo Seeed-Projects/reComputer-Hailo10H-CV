@@ -15,11 +15,14 @@ FCN-8s with ResNet-18 backbone for real-time semantic segmentation on Hailo-10H.
 
 ## Quick Start
 
+Runtime baseline: Python 3.13 and HailoRT 5.1.1. Run the build command from the repository root.
+
 ```bash
-docker build -t fcn8 -f docker/hailo10h/fcn8_resnet_v1_18.dockerfile .
+docker build -t fcn8 -f docker/hailo10h/fcn8_resnet_v1_18.dockerfile src/hailo10h_fcn8_resnet_v1_18
 
 sudo docker run --rm --privileged --net=host \
   --device /dev/hailo0:/dev/hailo0 \
+  -v /usr/lib/libhailort.so.5.1.1:/usr/lib/libhailort.so.5.1.1:ro \
   -v /usr/lib/libhailort.so:/usr/lib/libhailort.so:ro \
   fcn8
 ```
@@ -28,10 +31,9 @@ sudo docker run --rm --privileged --net=host \
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/health` | GET | Health check |
+| `/` | GET | Web preview |
+| `/api/video_feed` | GET | MJPEG stream |
 | `/api/models/fcn8_resnet/predict` | POST | Segmentation mask (JSON) |
-| `/api/models/fcn8_resnet/visualize` | POST | Overlay image (JPEG) |
-| `/api/models/fcn8_resnet/classes` | GET | Cityscapes class list |
 
 ## Source
 

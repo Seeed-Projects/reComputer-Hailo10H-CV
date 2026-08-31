@@ -990,7 +990,7 @@ def encode_loop(preview_w, preview_h, jpeg_quality):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='STDC1 B0 BN semantic segmentation on CM5 + Hailo-10H (Web Preview Mode)')
+    parser = argparse.ArgumentParser(description='STDC1 semantic segmentation on CM5 + Hailo-10H (Web Preview Mode)')
     parser.add_argument('--model_path', type=str, required=True, help='Path to .hef model (Hailo Executable Format)')
     parser.add_argument('--camera_id', type=int, default=0, help='Camera device ID (default: 0 for /dev/video0). Use -1 to disable camera and run web-only mode.')
     parser.add_argument('--video_path', type=str, help='Path to video file (overrides camera_id)')
@@ -1090,4 +1090,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

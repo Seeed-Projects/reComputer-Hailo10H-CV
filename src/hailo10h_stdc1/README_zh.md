@@ -15,9 +15,11 @@ STDC1（Short-Term Dense Concatenate）在 Hailo-10H 上的实时语义分割。
 
 ## 快速开始
 
+运行时基线：Python 3.13、HailoRT 5.1.1。请在仓库根目录执行构建命令。
+
 ```bash
 # 构建镜像
-docker build -t stdc1 -f docker/hailo10h/stdc1.dockerfile .
+docker build -t stdc1 -f docker/hailo10h/stdc1.dockerfile src/hailo10h_stdc1
 
 # 运行（需要 Hailo-10H 硬件）
 sudo docker run --rm --privileged --net=host \
@@ -31,10 +33,9 @@ sudo docker run --rm --privileged --net=host \
 
 | 接口 | 方法 | 说明 |
 |------|------|------|
-| `/health` | GET | 健康检查 |
+| `/` | GET | Web 预览 |
+| `/api/video_feed` | GET | MJPEG 视频流 |
 | `/api/models/stdc1/predict` | POST | 分割掩码 (JSON) |
-| `/api/models/stdc1/visualize` | POST | 叠加可视化 (JPEG) |
-| `/api/models/stdc1/classes` | GET | Cityscapes 类别列表 |
 
 ## 来源
 

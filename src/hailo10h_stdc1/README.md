@@ -15,9 +15,11 @@ STDC1 (Short-Term Dense Concatenate) for real-time semantic segmentation on Hail
 
 ## Quick Start
 
+Runtime baseline: Python 3.13 and HailoRT 5.1.1. Run the build command from the repository root.
+
 ```bash
 # Build
-docker build -t stdc1 -f docker/hailo10h/stdc1.dockerfile .
+docker build -t stdc1 -f docker/hailo10h/stdc1.dockerfile src/hailo10h_stdc1
 
 # Run (requires Hailo-10H hardware)
 sudo docker run --rm --privileged --net=host \
@@ -31,10 +33,9 @@ sudo docker run --rm --privileged --net=host \
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/health` | GET | Health check |
+| `/` | GET | Web preview |
+| `/api/video_feed` | GET | MJPEG stream |
 | `/api/models/stdc1/predict` | POST | Segmentation mask (JSON) |
-| `/api/models/stdc1/visualize` | POST | Overlay image (JPEG) |
-| `/api/models/stdc1/classes` | GET | Cityscapes class list |
 
 ## Source
 

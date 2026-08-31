@@ -15,11 +15,14 @@ MediaPipe Face Landmarks Lite (0.6M params) on Hailo-10H.
 
 ## Quick Start
 
+Runtime baseline: Python 3.13 and HailoRT 5.1.1. Run the build command from the repository root.
+
 ```bash
-docker build -t face-landmarks -f docker/hailo10h/face_landmarks_lite.dockerfile .
+docker build -t face-landmarks -f docker/hailo10h/face_landmarks_lite.dockerfile src/hailo10h_face_landmarks_lite
 
 sudo docker run --rm --privileged --net=host \
   --device /dev/hailo0:/dev/hailo0 \
+  -v /usr/lib/libhailort.so.5.1.1:/usr/lib/libhailort.so.5.1.1:ro \
   -v /usr/lib/libhailort.so:/usr/lib/libhailort.so:ro \
   face-landmarks
 ```
@@ -28,10 +31,9 @@ sudo docker run --rm --privileged --net=host \
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/health` | GET | Health check |
-| `/api/models/face_landmarks/predict` | POST | Facial keypoints (JSON) |
-| `/api/models/face_landmarks/visualize` | POST | Landmark overlay (JPEG) |
-| `/api/models/face_landmarks/keypoints` | GET | Keypoint count |
+| `/` | GET | Web preview |
+| `/api/video_feed` | GET | MJPEG stream |
+| `/api/models/face_landmarks_lite/predict` | POST | 98 facial keypoints (JSON) |
 
 ## Source
 

@@ -18,7 +18,7 @@ reComputer-Hailo10H-CV/
 │   └── hailo10h_<model>/
 │       ├── web_detection.py # FastAPI 推理服务
 │       ├── py_utils/        # HailoInfer + 工具函数
-│       ├── hailot-packages/ # HailoRT Python wheel
+│       ├── hailort-packages/ # HailoRT Python wheel
 │       ├── model/           # HEF 模型文件
 │       ├── video/           # 演示视频
 │       └── requirements.txt
@@ -38,6 +38,11 @@ reComputer-Hailo10H-CV/
 | [**FCN8 ResNet-18**](src/hailo10h_fcn8_resnet_v1_18/) | 语义分割 | 11.20M | 1024×1920 | 69.2% mIoU | [下载](https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/v5.4.0/hailo10h/fcn8_resnet_v1_18.hef) |
 | [**MSPN RegNetX-800MF**](src/hailo10h_mspn_regnetx_800mf/) | 姿态估计 | 7.17M | 256×192 | 69.8% AP | [下载](https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/v5.4.0/hailo10h/mspn_regnetx_800mf.hef) |
 | [**LightFace Slim**](src/hailo10h_lightface_slim/) | 人脸检测 | 0.26M | 240×320 | 39.3% mAP | [下载](https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/v5.4.0/hailo10h/lightface_slim.hef) |
+| [**Face Landmarks Lite**](src/hailo10h_face_landmarks_lite/) | 人脸关键点 | 0.6M | 192×192 | — | [来源](https://github.com/hailo-ai/hailo_model_zoo) |
+| [**ArcFace MobileFaceNet**](src/hailo10h_arcface_mobilefacenet/) | 人脸特征提取 | 2.04M | 112×112 | 99.4% LFW | [来源](https://github.com/hailo-ai/hailo_model_zoo) |
+| [**YOLO26n-seg**](src/hailo10h_yolo26n_seg/) | 实例分割 | 2.7M | 640×640 | — | [来源](https://github.com/hailo-ai/hailo_model_zoo) |
+| [**YOLO26s-seg**](src/hailo10h_yolo26s_seg/) | 实例分割 | 10.4M | 640×640 | — | [来源](https://github.com/hailo-ai/hailo_model_zoo) |
+| [**YOLO26m-seg**](src/hailo10h_yolo26m_seg/) | 实例分割 | 23.6M | 640×640 | — | [来源](https://github.com/hailo-ai/hailo_model_zoo) |
 
 ## 快速开始
 
@@ -50,6 +55,8 @@ sudo systemctl enable docker && sudo systemctl start docker
 ```
 
 ### 2. 安装 HailoRT (Hailo-10H)
+
+容器统一使用 Python 3.13 和 HailoRT 5.1.1 Python wheel。宿主机驱动、运行库和固件必须使用匹配的 HailoRT 版本。
 
 ```bash
 sudo apt update
@@ -70,6 +77,7 @@ docker pull ghcr.io/seeed-projects/recomputer-hailo10h-cv/stdc1:latest
 # 运行
 sudo docker run --rm --privileged --net=host \
   --device /dev/hailo0:/dev/hailo0 \
+  -v /usr/lib/libhailort.so.5.1.1:/usr/lib/libhailort.so.5.1.1:ro \
   -v /usr/lib/libhailort.so:/usr/lib/libhailort.so:ro \
   ghcr.io/seeed-projects/recomputer-hailo10h-cv/stdc1:latest
 ```
@@ -92,12 +100,7 @@ curl -X POST http://<设备IP>:8000/api/models/stdc1/predict \
   -F "file=@test.jpg"
 ```
 
-### 可视化
-
-```bash
-curl -X POST http://<设备IP>:8000/api/models/stdc1/visualize \
-  -F "file=@test.jpg" -o result.jpg
-```
+网页预览位于 `/`，MJPEG 视频流位于 `/api/video_feed`。各模型的专用接口以对应模块 README 为准。
 
 ## 模型来源
 

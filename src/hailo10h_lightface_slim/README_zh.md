@@ -15,11 +15,14 @@
 
 ## 快速开始
 
+运行时基线：Python 3.13、HailoRT 5.1.1。请在仓库根目录执行构建命令。
+
 ```bash
-docker build -t lightface -f docker/hailo10h/lightface_slim.dockerfile .
+docker build -t lightface -f docker/hailo10h/lightface_slim.dockerfile src/hailo10h_lightface_slim
 
 sudo docker run --rm --privileged --net=host \
   --device /dev/hailo0:/dev/hailo0 \
+  -v /usr/lib/libhailort.so.5.1.1:/usr/lib/libhailort.so.5.1.1:ro \
   -v /usr/lib/libhailort.so:/usr/lib/libhailort.so:ro \
   lightface
 ```
@@ -28,9 +31,9 @@ sudo docker run --rm --privileged --net=host \
 
 | 接口 | 方法 | 说明 |
 |------|------|------|
-| `/health` | GET | 健康检查 |
-| `/api/models/lightface/predict` | POST | 人脸框 (JSON) |
-| `/api/models/lightface/visualize` | POST | 框叠加 (JPEG) |
+| `/` | GET | Web 预览 |
+| `/api/video_feed` | GET | MJPEG 视频流 |
+| `/api/models/lightface_slim/predict` | POST | 人脸框 (JSON) |
 
 ## 来源
 

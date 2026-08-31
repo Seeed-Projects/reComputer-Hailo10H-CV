@@ -383,20 +383,15 @@ async def predict(
         predictions = []
         if keypoints is not None:
             draw_pose(img, keypoints, lb_info)
-
-            # Summarize segmentation as per-class pixel coverage. The "confidence"
-            # field carries the fraction of the network-input mask occupied by
-            # each class so existing API consumers see a familiar shape.
-            class_ids, counts = np.unique(mask, return_counts=True)
-            total = float(mask.size)
-            for cl, n in zip(class_ids, counts):
-                if cl == 255 or cl >= len(CLASSES):
-                    continue
-                predictions.append({
-                    "class": CLASSES[int(cl)],
-                    "confidence": float(n) / total,
-                    "pixels": int(n),
-                })
+            predictions = [
+                {
+                    "id": index,
+                    "x": float(point[0]),
+                    "y": float(point[1]),
+                    "confidence": float(point[2]),
+                }
+                for index, point in enumerate(keypoints)
+            ]
 
         return {
             "success": True,
@@ -913,7 +908,7 @@ def encode_loop(preview_w, preview_h, jpeg_quality):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='STDC1 B0 BN semantic segmentation on CM5 + Hailo-10H (Web Preview Mode)')
+    parser = argparse.ArgumentParser(description='MSPN RegNetX-800MF pose estimation on CM5 + Hailo-10H (Web Preview Mode)')
     parser.add_argument('--model_path', type=str, required=True, help='Path to .hef model (Hailo Executable Format)')
     parser.add_argument('--camera_id', type=int, default=0, help='Camera device ID (default: 0 for /dev/video0). Use -1 to disable camera and run web-only mode.')
     parser.add_argument('--video_path', type=str, help='Path to video file (overrides camera_id)')

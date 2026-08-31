@@ -18,7 +18,7 @@ reComputer-Hailo10H-CV/
 │   └── hailo10h_<model>/
 │       ├── web_detection.py # FastAPI inference service
 │       ├── py_utils/        # HailoInfer + utilities
-│       ├── hailot-packages/ # HailoRT Python wheel
+│       ├── hailort-packages/ # HailoRT Python wheel
 │       ├── model/           # HEF model file
 │       ├── video/           # Demo video
 │       └── requirements.txt
@@ -38,6 +38,11 @@ reComputer-Hailo10H-CV/
 | [**FCN8 ResNet-18**](src/hailo10h_fcn8_resnet_v1_18/) | Semantic Segmentation | 11.20M | 1024×1920 | 69.2% mIoU | [Download](https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/v5.4.0/hailo10h/fcn8_resnet_v1_18.hef) |
 | [**MSPN RegNetX-800MF**](src/hailo10h_mspn_regnetx_800mf/) | Pose Estimation | 7.17M | 256×192 | 69.8% AP | [Download](https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/v5.4.0/hailo10h/mspn_regnetx_800mf.hef) |
 | [**LightFace Slim**](src/hailo10h_lightface_slim/) | Face Detection | 0.26M | 240×320 | 39.3% mAP | [Download](https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/v5.4.0/hailo10h/lightface_slim.hef) |
+| [**Face Landmarks Lite**](src/hailo10h_face_landmarks_lite/) | Facial Landmarks | 0.6M | 192×192 | — | [Source](https://github.com/hailo-ai/hailo_model_zoo) |
+| [**ArcFace MobileFaceNet**](src/hailo10h_arcface_mobilefacenet/) | Face Embedding | 2.04M | 112×112 | 99.4% LFW | [Source](https://github.com/hailo-ai/hailo_model_zoo) |
+| [**YOLO26n-seg**](src/hailo10h_yolo26n_seg/) | Instance Segmentation | 2.7M | 640×640 | — | [Source](https://github.com/hailo-ai/hailo_model_zoo) |
+| [**YOLO26s-seg**](src/hailo10h_yolo26s_seg/) | Instance Segmentation | 10.4M | 640×640 | — | [Source](https://github.com/hailo-ai/hailo_model_zoo) |
+| [**YOLO26m-seg**](src/hailo10h_yolo26m_seg/) | Instance Segmentation | 23.6M | 640×640 | — | [Source](https://github.com/hailo-ai/hailo_model_zoo) |
 
 ## Quick Start
 
@@ -50,6 +55,8 @@ sudo systemctl enable docker && sudo systemctl start docker
 ```
 
 ### 2. Install HailoRT (Hailo-10H)
+
+The containers use Python 3.13 and the HailoRT 5.1.1 Python wheel. Keep the host driver, runtime library, and firmware on the matching HailoRT release.
 
 ```bash
 sudo apt update
@@ -70,6 +77,7 @@ docker pull ghcr.io/seeed-projects/recomputer-hailo10h-cv/stdc1:latest
 # Run
 sudo docker run --rm --privileged --net=host \
   --device /dev/hailo0:/dev/hailo0 \
+  -v /usr/lib/libhailort.so.5.1.1:/usr/lib/libhailort.so.5.1.1:ro \
   -v /usr/lib/libhailort.so:/usr/lib/libhailort.so:ro \
   ghcr.io/seeed-projects/recomputer-hailo10h-cv/stdc1:latest
 ```
@@ -92,12 +100,7 @@ curl -X POST http://<device_ip>:8000/api/models/stdc1/predict \
   -F "file=@test.jpg"
 ```
 
-### Visualization
-
-```bash
-curl -X POST http://<device_ip>:8000/api/models/stdc1/visualize \
-  -F "file=@test.jpg" -o result.jpg
-```
+The web preview is available at `/`, and the MJPEG stream is available at `/api/video_feed`. Model-specific endpoints are documented in each module README.
 
 ## Model Sources
 

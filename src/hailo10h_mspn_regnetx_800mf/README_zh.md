@@ -14,11 +14,14 @@ MSPN（多阶段姿态网络）+ RegNetX-800MF 骨干，在 Hailo-10H 上的单�
 
 ## 快速开始
 
+运行时基线：Python 3.13、HailoRT 5.1.1。请在仓库根目录执行构建命令。
+
 ```bash
-docker build -t mspn -f docker/hailo10h/mspn_regnetx_800mf.dockerfile .
+docker build -t mspn -f docker/hailo10h/mspn_regnetx_800mf.dockerfile src/hailo10h_mspn_regnetx_800mf
 
 sudo docker run --rm --privileged --net=host \
   --device /dev/hailo0:/dev/hailo0 \
+  -v /usr/lib/libhailort.so.5.1.1:/usr/lib/libhailort.so.5.1.1:ro \
   -v /usr/lib/libhailort.so:/usr/lib/libhailort.so:ro \
   mspn
 ```
@@ -27,10 +30,9 @@ sudo docker run --rm --privileged --net=host \
 
 | 接口 | 方法 | 说明 |
 |------|------|------|
-| `/health` | GET | 健康检查 |
-| `/api/models/mspn_pose/predict` | POST | 关键点 (JSON) |
-| `/api/models/mspn_pose/visualize` | POST | 姿态叠加 (JPEG) |
-| `/api/models/mspn_pose/keypoints` | GET | 关键点定义 |
+| `/` | GET | Web 预览 |
+| `/api/video_feed` | GET | MJPEG 视频流 |
+| `/api/models/mspn_regnetx_800mf/predict` | POST | 17 个 COCO 关键点 (JSON) |
 
 ## 来源
 

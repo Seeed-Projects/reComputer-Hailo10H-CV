@@ -226,7 +226,7 @@ class VideoAnalyzer:
                     if outputs is not None:
                         # obj, nms = det_config.get()
                         kps, confs = post_process_hailo(outputs, 0, 0, IMG_SIZE[1], IMG_SIZE[0])
-                        if mask is not None:
+                        if kps is not None:
                             draw_landmarks(frame, kps, confs, lb_info)
                 if kind == 'ffmpeg':
                     out.stdin.write(frame.tobytes())
@@ -381,22 +381,17 @@ async def predict(
         kps, confs = post_process_hailo(outputs, 0, 0, IMG_SIZE[1], IMG_SIZE[0])
 
         predictions = []
-        if mask is not None:
+        if kps is not None:
             draw_landmarks(img, kps, confs, lb_info)
-
-            # Summarize segmentation as per-class pixel coverage. The "confidence"
-            # field carries the fraction of the network-input mask occupied by
-            # each class so existing API consumers see a familiar shape.
-            class_ids, counts = np.unique(mask, return_counts=True)
-            total = float(mask.size)
-            for cl, n in zip(class_ids, counts):
-                if cl == 255 or cl >= len(CLASSES):
-                    continue
-                predictions.append({
-                    "class": CLASSES[int(cl)],
-                    "confidence": float(n) / total,
-                    "pixels": int(n),
-                })
+            predictions = [
+                {
+                    "id": index,
+                    "x": float(point[0]),
+                    "y": float(point[1]),
+                    "confidence": float(confs[index]),
+                }
+                for index, point in enumerate(kps)
+            ]
 
         return {
             "success": True,
@@ -867,7 +862,7 @@ def inference_loop(cap, model, co_helper, is_video_file, target_fps):
             if outputs is not None:
                 # obj, nms = det_config.get()
                 kps, confs = post_process_hailo(outputs, 0, 0, IMG_SIZE[1], IMG_SIZE[0])
-                if mask is not None:
+                if kps is not None:
                     draw_landmarks(frame, kps, confs, lb_info)
 
             inf_fps = 1.0 / inference_time if inference_time > 0 else 0
@@ -908,7 +903,7 @@ def encode_loop(preview_w, preview_h, jpeg_quality):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='STDC1 B0 BN semantic segmentation on CM5 + Hailo-10H (Web Preview Mode)')
+    parser = argparse.ArgumentParser(description='Face Landmarks Lite on CM5 + Hailo-10H (Web Preview Mode)')
     parser.add_argument('--model_path', type=str, required=True, help='Path to .hef model (Hailo Executable Format)')
     parser.add_argument('--camera_id', type=int, default=0, help='Camera device ID (default: 0 for /dev/video0). Use -1 to disable camera and run web-only mode.')
     parser.add_argument('--video_path', type=str, help='Path to video file (overrides camera_id)')

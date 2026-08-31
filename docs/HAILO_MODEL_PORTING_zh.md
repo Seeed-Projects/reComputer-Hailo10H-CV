@@ -44,8 +44,8 @@ lightface_slim.hef
 src/hailo10h_<model_slug>/
 ├── web_detection.py
 ├── py_utils/
-├── hailot-packages/
-│   └── hailort-5.3.0-cp311-cp311-linux_aarch64.whl
+├── hailort-packages/
+│   └── hailort-5.1.1-cp313-cp313-linux_aarch64.whl
 ├── model/
 │   └── <model_slug>.hef
 ├── video/
@@ -65,7 +65,8 @@ docker/hailo10h/<model_slug>.dockerfile
 |---|---|
 | `docker/hailo10h/<model>.dockerfile` | `CMD` 里的 `--model_path model/<model>.hef` 是否正确 |
 | `src/hailo10h_<model>/model/` | 是否存在对应 `.hef` |
-| `src/hailo10h_<model>/hailort-packages/` | 是否有 `hailort-5.3.0-cp311-cp311-linux_aarch64.whl` |
+| `src/hailo10h_<model>/hailort-packages/` | 是否只有 `hailort-5.1.1-cp313-cp313-linux_aarch64.whl` |
+| `src/hailo10h_<model>/py_utils/hailo_executor.py` | 是否使用 5.1.1 的显式输出 buffer 和 `run([bindings], timeout=10_000)` |
 | `src/hailo10h_<model>/web_detection.py` | `post_process_hailo()` 是否适配该模型输出 |
 | `src/hailo10h_<model>/web_detection.py` | API 路径是否是 `/api/models/<model>/predict` |
 | `src/hailo10h_<model>/web_detection.py` | 是否使用 `argparse` 和 `HailoInfer` |
@@ -87,6 +88,7 @@ sudo docker build -f ../../docker/hailo10h/stdc1.dockerfile \
 sudo docker run --rm --privileged --net=host \
     -e PYTHONUNBUFFERED=1 \
     --device /dev/hailo0:/dev/hailo0 \
+    -v /usr/lib/libhailort.so.5.1.1:/usr/lib/libhailort.so.5.1.1:ro \
     -v /usr/lib/libhailort.so:/usr/lib/libhailort.so:ro \
     hailo10h-stdc1:latest
 ```
@@ -98,6 +100,7 @@ sudo docker run --rm --privileged --net=host \
     -e PYTHONUNBUFFERED=1 \
     --device /dev/hailo0:/dev/hailo0 \
     --device /dev/video0:/dev/video0 \
+    -v /usr/lib/libhailort.so.5.1.1:/usr/lib/libhailort.so.5.1.1:ro \
     -v /usr/lib/libhailort.so:/usr/lib/libhailort.so:ro \
     hailo10h-stdc1:latest \
     python web_detection.py --model_path model/stdc1.hef --camera_id 0
@@ -113,7 +116,7 @@ http://<Pi5_IP>:8000
 
 | 现象 | 优先检查 |
 |---|---|
-| 容器启动时报 HailoRT 相关错误 | 宿主机 `hailo-h10-all`、`.whl`（5.3.0）、`libhailort.so` 版本是否一致 |
+| 容器启动时报 HailoRT 相关错误 | 宿主机 `hailo-h10-all`、5.1.1 wheel、固件和两个 `libhailort.so` 挂载是否一致 |
 | 找不到模型文件 | Dockerfile `CMD` 和 `model/` 里的 `.hef` 文件名是否一致 |
 | 检测框全错或无结果 | `.hef` 是否带 NMS；不带 NMS 需要重写检测后处理 |
 | 分割颜色或类别名错位 | 类别索引是否按训练数据顺序排列 |
