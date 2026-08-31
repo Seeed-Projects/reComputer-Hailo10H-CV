@@ -26,6 +26,8 @@ on:
           - yolo26n_seg
           - yolo26s_seg
           - yolo26m_seg
+          - paddle_ocr_v5_mobile_detection
+          - paddle_ocr_v5_mobile_recognition
 
 permissions:
   contents: read
@@ -71,6 +73,12 @@ jobs:
           - model: yolo26m_seg
             image: yolo26m_seg
             description: YOLO26m-seg instance segmentation
+          - model: paddle_ocr_v5_mobile_detection
+            image: paddle_ocr_v5_mobile_detection
+            description: PaddleOCR v5 Mobile text detection
+          - model: paddle_ocr_v5_mobile_recognition
+            image: paddle_ocr_v5_mobile_recognition
+            description: PaddleOCR v5 Mobile text recognition
 
     steps:
       - name: Checkout

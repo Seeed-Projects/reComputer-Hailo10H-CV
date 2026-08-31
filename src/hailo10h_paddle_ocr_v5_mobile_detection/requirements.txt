@@ -1,0 +1,7 @@
+numpy
+opencv-python
+fastapi
+uvicorn
+python-multipart
+shapely
+pyclipper
