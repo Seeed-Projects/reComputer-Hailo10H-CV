@@ -170,7 +170,7 @@ class VideoAnalyzer:
 
 video_analyzer = VideoAnalyzer()
 
-app = FastAPI(title="reComputer PaddleOCR v5 Mobile Detection Hailo-8")
+app = FastAPI(title="reComputer PaddleOCR v5 Mobile Detection Hailo-10H")
 
 @app.get("/api/config")
 async def get_config():
@@ -483,7 +483,7 @@ async def index():
     return Response(content="""
     <html>
       <head>
-        <title>reComputer PaddleOCR Detection · Hailo-8</title>
+        <title>reComputer PaddleOCR Detection · Hailo-10H</title>
         <style>
           body { background-color: #1a1a1a; color: white; text-align: center; font-family: sans-serif; margin: 0; padding: 20px; }
           .container { max-width: 1200px; margin: 0 auto; }
@@ -514,7 +514,7 @@ async def index():
       </head>
       <body>
         <div class="container">
-          <h1>PaddleOCR v5 Mobile Detection · RPi5 + Hailo-8</h1>
+          <h1>PaddleOCR v5 Mobile Detection · RPi5 + Hailo-10H</h1>
           <div class="tabs">
             <div class="tab active" onclick="showTab('realtime')">Real-time Detection</div>
             <div class="tab" onclick="showTab('analysis')">Local Video Analysis</div>
@@ -708,7 +708,7 @@ def encode_loop(preview_w, preview_h, jpeg_quality):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='PaddleOCR v5 Mobile Detection on RPi5 + Hailo-8 (Web Preview Mode)')
+    parser = argparse.ArgumentParser(description='PaddleOCR v5 Mobile Detection on RPi5 + Hailo-10H (Web Preview Mode)')
     parser.add_argument('--model_path', type=str, required=True, help='Path to .hef model (Hailo Executable Format)')
     parser.add_argument('--camera_id', type=int, default=0, help='Camera device ID (default: 0). Use -1 to disable camera and run web-only mode.')
     parser.add_argument('--video_path', type=str, help='Path to video file (overrides camera_id)')
