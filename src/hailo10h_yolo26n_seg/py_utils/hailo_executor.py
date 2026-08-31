@@ -7,6 +7,13 @@ INFERENCE_TIMEOUT_MS = 10_000
 
 
 class HailoInfer:
+    """Multi-output HailoRT 5.x executor (Hailo-10H compatible).
+
+    Supports any number of output vstreams: single-output models get the
+    familiar `{name: array}` dict, multi-output models (e.g. yolo26_seg with
+    10 heads) get one buffer per output name.
+    """
+
     def __init__(self, hef_path):
         self.target = VDevice()
 
@@ -15,26 +22,28 @@ class HailoInfer:
         self.model = self.target.create_infer_model(hef_path)
 
         self.input_info = self.model.input()
-        self.output_info = self.model.output()
 
+        # Enumerate ALL output vstreams (single- or multi-output models).
         output_vstream_infos = self.hef.get_output_vstream_infos()
-        if len(output_vstream_infos) != 1:
-            raise ValueError(
-                f"Expected one output tensor, got {len(output_vstream_infos)}"
-            )
+        if not output_vstream_infos:
+            raise ValueError("Model has no output vstreams")
 
-        output_format_type = output_vstream_infos[0].format.type
-        output_dtype_name = str(output_format_type).split(".")[-1].lower()
-        try:
-            self.output_dtype = np.dtype(output_dtype_name)
-        except TypeError as exc:
-            raise ValueError(
-                f"Unsupported Hailo output format: {output_format_type}"
-            ) from exc
-
-        # Make the configured output format match the HEF metadata used to
-        # allocate the output buffer below.
-        self.output_info.set_format_type(output_format_type)
+        self.output_names = []
+        self._output_dtypes = {}
+        for info in output_vstream_infos:
+            output_format_type = info.format.type
+            output_dtype_name = str(output_format_type).split(".")[-1].lower()
+            try:
+                dtype = np.dtype(output_dtype_name)
+            except TypeError as exc:
+                raise ValueError(
+                    f"Unsupported Hailo output format: {output_format_type}"
+                ) from exc
+            # Make the configured output format match the HEF metadata used
+            # to allocate the output buffer at run time.
+            self.model.output(info.name).set_format_type(output_format_type)
+            self.output_names.append(info.name)
+            self._output_dtypes[info.name] = dtype
 
         # Shape may be (H, W, C) or (N, H, W, C) depending on API version
         shape = self.input_info.shape
@@ -45,7 +54,8 @@ class HailoInfer:
 
         print(f"Hailo infer model loaded: {hef_path}")
         print(f"  Input:  {self.input_info.name} shape={self.input_info.shape}")
-        print(f"  Output: {self.output_info.name} shape={self.output_info.shape}")
+        for name in self.output_names:
+            print(f"  Output: {name} shape={self.model.output(name).shape}")
 
     def run(self, image):
         if image.dtype != np.uint8:
@@ -54,20 +64,26 @@ class HailoInfer:
             image = np.expand_dims(image, axis=0)
 
         with self.model.configure() as configured_model:
-            output_buffer = np.empty(
-                self.output_info.shape,
-                dtype=self.output_dtype,
-            )
+            output_buffers = {
+                name: np.empty(
+                    self.model.output(name).shape,
+                    dtype=self._output_dtypes[name],
+                )
+                for name in self.output_names
+            }
             bindings = configured_model.create_bindings(
-                output_buffers={self.output_info.name: output_buffer}
+                output_buffers=output_buffers
             )
             bindings.input().set_buffer(image)
             # HailoRT 5.1.1 expects an iterable of Bindings, even for a
             # single-frame inference. The timeout unit is milliseconds.
             configured_model.run([bindings], timeout=INFERENCE_TIMEOUT_MS)
-            output = bindings.output(self.output_info.name).get_buffer()
+            outputs = {
+                name: bindings.output(name).get_buffer()
+                for name in self.output_names
+            }
 
-        return {self.output_info.name: output}
+        return outputs
 
     def release(self):
         try:

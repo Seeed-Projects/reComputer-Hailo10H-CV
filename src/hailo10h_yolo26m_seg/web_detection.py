@@ -224,10 +224,10 @@ class VideoAnalyzer:
                     outputs = self.model.run(processed_img)
 
                     if outputs is not None:
-                        # obj, nms = det_config.get()
-                        boxes, scores, class_ids = post_process_hailo(outputs, 0, 0, IMG_SIZE[1], IMG_SIZE[0])
+                        obj, nms = det_config.get()
+                        boxes, scores, class_ids, masks = post_process_hailo(outputs, obj, nms, IMG_SIZE[1], IMG_SIZE[0])
                         if boxes is not None:
-                            draw_boxes(frame, boxes, scores, class_ids, lb_info)
+                            draw_boxes(frame, boxes, scores, class_ids, masks, lb_info)
                 if kind == 'ffmpeg':
                     out.stdin.write(frame.tobytes())
                 else:
@@ -378,16 +378,21 @@ async def predict(
         input_img, lb_info = preprocess_frame(img, _global_co_helper)
         outputs = _global_model.run(input_img)
 
-        boxes, scores, class_ids = post_process_hailo(outputs, 0, 0, IMG_SIZE[1], IMG_SIZE[0])
+        boxes, scores, class_ids, masks = post_process_hailo(outputs, OBJ_THRESH, 0, IMG_SIZE[1], IMG_SIZE[0])
 
         predictions = []
         if boxes is not None:
-            draw_boxes(img, boxes, scores, class_ids, lb_info)
+            real_boxes = unletterbox_boxes(boxes, lb_info)
+            real_boxes[:, [0, 2]] = np.clip(real_boxes[:, [0, 2]], 0, w - 1)
+            real_boxes[:, [1, 3]] = np.clip(real_boxes[:, [1, 3]], 0, h - 1)
+            frame_masks = unletterbox_masks(masks, lb_info, img.shape) if masks is not None else None
+            draw_boxes(img, real_boxes, scores, class_ids, frame_masks, None)
             predictions = [
                 {
-                    "box": [float(value) for value in box],
+                    "class": COCO_CLASSES[int(class_ids[index]) % len(COCO_CLASSES)],
                     "confidence": float(scores[index]),
-                    "class_id": int(class_ids[index]),
+                    "box": {"x1": int(real_boxes[index][0]), "y1": int(real_boxes[index][1]),
+                            "x2": int(real_boxes[index][2]), "y2": int(real_boxes[index][3])},
                 }
                 for index, box in enumerate(boxes)
                 if float(scores[index]) >= OBJ_THRESH
@@ -775,43 +780,280 @@ def _primary_output_tensor(hailo_output):
         return hailo_output[0]
     return hailo_output
 
+
+def _sigmoid(x):
+    return 1 / (1 + np.exp(-x))
+
+
+# ---------------------------------------------------------------------------
+# YOLO26-seg post-processing (one2one heads, CPU decode)
+#
+# Ported from hailo_model_zoo core/postprocessing (meta_arch "yolo26_seg",
+# base/yolo26_seg.yaml). The HEF exposes 10 heads, no on-chip NMS:
+#   3 strides (32/16/8), feature maps 20x20 / 40x40 / 80x80, each with:
+#     bbox   (BS, F, F, 64)   one2one distances: l, t, r, b x 16 bins
+#     score  (BS, F, F, 80)   per-class logits (sigmoid on CPU)
+#     mask   (BS, F, F, 32)   mask coefficients
+#   plus proto (BS, 160, 160, 32).
+#
+# YOLO26 is "one2one": ONE prediction per grid cell (no anchors, no NMS).
+# Decode follows YoloPostProc._yolo6_decode:
+#   x1y1 = offset + 0.5 - ltr; x2y2 = offset + 0.5 + ltr (in stride units)
+# then ultralytics-style top-k selection (yolo26_filter) picks the final
+# (anchor, class) pairs, and process_mask assembles sigmoid(coeffs @ proto)
+# cropped to each box.
+# ---------------------------------------------------------------------------
+
+_Y26_STRIDES = (32, 16, 8)          # head order: 20x20, 40x40, 80x80
+_Y26_REG_BINS = 16                  # 64 channels / 4 sides
+_Y26_PROTO = 160                    # proto grid
+_Y26_CLASSES = 80
+_Y26_TOP_K = 100                    # post_nms_topk (Model Zoo default)
+_Y26_SCORE_THRES = 0.25             # live preview cut
+
+
+def _classify_heads(endnodes):
+    """Sort the 10 output vstreams into (bbox, score, mask) per stride + proto.
+    Heads are identified by channel count and spatial size; HailoRT dict
+    order is not relied upon."""
+    bboxes, scores, masks, proto = [], [], [], None
+    for e in endnodes:
+        arr = np.asarray(e)
+        if arr.ndim == 4:
+            arr = arr[0]
+        if arr.ndim != 3:
+            continue
+        h, w, c = arr.shape
+        if h == _Y26_PROTO and c == 32:
+            proto = arr
+        elif c == 64:
+            bboxes.append(arr)
+        elif c == 80:
+            scores.append(arr)
+        elif c == 32:
+            masks.append(arr)
+
+    def spatial(a):
+        return a.shape[0] * a.shape[1]
+    # _Y26_STRIDES is (32, 16, 8): ascending spatial order (20x20 -> 80x80).
+    bboxes.sort(key=spatial)
+    scores.sort(key=spatial)
+    masks.sort(key=spatial)
+    return bboxes, scores, masks, proto
+
+
+def _decode_yolo26_boxes(bbox_head, stride):
+    """One2one distance decode (port of _yolo6_decode + DFL softmax).
+
+    bbox_head: (F, F, 64) raw; returns xyxy in input pixels, shape
+    (F*F, 4) with row-major grid order (y-major, x-minor).
+    """
+    fh, fw, _ = bbox_head.shape
+    # DFL: softmax over 16 bins, expectation -> distance in stride units.
+    d = bbox_head.reshape(fh, fw, 4, _Y26_REG_BINS)
+    d = _softmax_last(d)                      # (F, F, 4, 16)
+    bins = np.arange(_Y26_REG_BINS, dtype=np.float32)
+    dist = d @ bins                           # (F, F, 4) stride units
+
+    # Grid offsets: cell center in stride units (broadcast-safe: keep (F, F)).
+    gx, gy = np.meshgrid(np.arange(fw), np.arange(fh))  # (F, F)
+    cx = gx.astype(np.float32) + 0.5
+    cy = gy.astype(np.float32) + 0.5
+
+    # one2one: distances from the cell center (offset + 0.5).
+    l, t, r, b = dist[..., 0], dist[..., 1], dist[..., 2], dist[..., 3]
+    x1 = (cx - l) * stride
+    y1 = (cy - t) * stride
+    x2 = (cx + r) * stride
+    y2 = (cy + b) * stride
+
+    boxes = np.stack([x1, y1, x2, y2], axis=-1).reshape(-1, 4)
+    return boxes
+
+
+def _softmax_last(x):
+    e = np.exp(x - np.max(x, axis=-1, keepdims=True))
+    return e / np.sum(e, axis=-1, keepdims=True)
+
+
+def _crop_mask(masks, boxes):
+    """Zero mask pixels outside each box (port of crop_mask). masks (N, h, w),
+    boxes (N, 4) in mask-pixel coords."""
+    n = masks.shape[0]
+    integer_boxes = np.ceil(boxes).astype(int)
+    x1, y1, x2, y2 = np.array_split(
+        np.where(integer_boxes > 0, integer_boxes, 0), 4, axis=1)
+    for k in range(n):
+        masks[k, :y1[k, 0], :] = 0
+        masks[k, :, :x1[k, 0]] = 0
+        if y2[k, 0] < masks.shape[1]:
+            masks[k, y2[k, 0]:, :] = 0
+        if x2[k, 0] < masks.shape[2]:
+            masks[k, :, x2[k, 0]:] = 0
+    return masks
+
+
 def post_process_hailo(hailo_output, obj_thresh, nms_thresh, input_h, input_w):
-    """Extract bounding boxes and masks from instance segmentation output."""
+    """Full YOLO26-seg decode. Returns (boxes, scores, class_ids, masks):
+      boxes     (N, 4) xyxy in input-pixel space
+      scores    (N,)   sigmoided class scores
+      class_ids (N,)   COCO class indices
+      masks     (N, h, w) float masks over the input frame, or None
+    obj_thresh overrides the default score cut; nms_thresh unused (one2one).
+    """
     global _SEG_OUTPUT_LOGGED
     if hailo_output is None:
-        return None, None, None
-    detections = np.asarray(_primary_output_tensor(hailo_output))
-    if detections.ndim == 3:
-        detections = detections[0]
-    boxes = detections[:, :4]
-    scores = detections[:, 4]
-    class_ids = detections[:, 5].astype(int) if detections.shape[1] > 5 else np.zeros(len(boxes), dtype=int)
+        return None, None, None, None
+    if isinstance(hailo_output, dict):
+        endnodes = list(hailo_output.values())
+    elif isinstance(hailo_output, (list, tuple)):
+        endnodes = list(hailo_output)
+    else:
+        endnodes = [hailo_output]
+
+    bboxes, scores_raw, masks_raw, proto = _classify_heads(endnodes)
+    if not (len(bboxes) == len(scores_raw) == len(masks_raw) == 3) or proto is None:
+        if not _SEG_OUTPUT_LOGGED:
+            print(f"[YOLO26-seg] unexpected output layout: "
+                  f"{[np.asarray(e).shape for e in endnodes]}", flush=True)
+            _SEG_OUTPUT_LOGGED = True
+        return None, None, None, None
+
+    # Per-stride decode, concatenated in stride 32 -> 16 -> 8 order.
+    all_boxes, all_scores, all_coeffs = [], [], []
+    for i, stride in enumerate(_Y26_STRIDES):
+        fh, fw, _ = bboxes[i].shape
+        boxes = _decode_yolo26_boxes(bboxes[i], stride)          # (F*F, 4)
+        sc = _sigmoid(scores_raw[i].reshape(-1, _Y26_CLASSES))   # (F*F, 80)
+        cf = masks_raw[i].reshape(-1, 32)                        # (F*F, 32)
+        all_boxes.append(boxes)
+        all_scores.append(sc)
+        all_coeffs.append(cf)
+    boxes = np.concatenate(all_boxes, axis=0)        # (A, 4) A=8400
+    scores = np.concatenate(all_scores, axis=0)      # (A, 80)
+    coeffs = np.concatenate(all_coeffs, axis=0)      # (A, 32)
+
     if not _SEG_OUTPUT_LOGGED:
-        print(f"[YOLO26m-seg] {len(boxes)} instances", flush=True)
+        print(f"[YOLO26-seg] anchors={len(boxes)}, proto={proto.shape}", flush=True)
         _SEG_OUTPUT_LOGGED = True
-    return boxes, scores, class_ids
+
+    # ultralytics get_topk_index (port of yolo26_filter): two-stage top-k
+    # allowing multiple classes per anchor, no NMS.
+    k = _Y26_TOP_K
+    max_scores = scores.max(axis=1)                  # (A,)
+    A = len(max_scores)
+    k1 = min(k, A)
+    ori_idx = np.argpartition(max_scores, -k1)[-k1:]  # top-k anchors
+    topk_scores = scores[ori_idx]                     # (k1, 80)
+    flat = topk_scores.reshape(-1)                    # (k1*80,)
+    k2 = min(k, flat.size)
+    top = np.argsort(flat)[::-1][:k2]                # top-k (anchor, class)
+    sel_scores = flat[top]
+    anchor_in_topk = top // _Y26_CLASSES
+    class_ids = (top % _Y26_CLASSES).astype(np.int32)
+    orig_anchor = ori_idx[anchor_in_topk]
+
+    keep = sel_scores > (obj_thresh if obj_thresh > 0 else _Y26_SCORE_THRES)
+    boxes = boxes[orig_anchor][keep]
+    scores = sel_scores[keep]
+    class_ids = class_ids[keep]
+    coeffs = coeffs[orig_anchor][keep]
+    if len(boxes) == 0:
+        return None, None, None, None
+
+    # Clip to the input frame.
+    boxes[:, [0, 2]] = np.clip(boxes[:, [0, 2]], 0, input_w)
+    boxes[:, [1, 3]] = np.clip(boxes[:, [1, 3]], 0, input_h)
+
+    # Mask assembly: sigmoid(coeffs @ proto^T) upsampled to input size, then
+    # cropped to each box (port of process_mask).
+    ph, pw, pc = proto.shape
+    masks = _sigmoid(coeffs @ proto.reshape(-1, pc).T)   # (N, ph*pw)
+    masks = masks.reshape(-1, ph, pw)
+    masks = np.stack([
+        cv2.resize(m, (input_w, input_h), interpolation=cv2.INTER_LINEAR)
+        for m in masks
+    ], axis=0)                                           # (N, ih, iw)
+    # Scale boxes to mask coords (mask is input-sized already after resize).
+    masks = _crop_mask(masks, boxes)
+    return boxes, scores, class_ids, masks
 
 
-# def draw(image, boxes, scores, classes):
-#     for box, score, cl in zip(boxes, scores, classes):
-#         top, left, right, bottom = [int(_b) for _b in box]
-#         cv2.rectangle(image, (top, left), (right, bottom), (255, 0, 0), 2)
-#         cv2.putText(image, '{0} {1:.2f}'.format(CLASSES[cl], score),
-#                         (top, left - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-def draw_boxes(image, boxes, scores, class_ids, lb_info=None):
-    if boxes is None:
-        return
-    COCO_CLASSES = ["person","bicycle","car","motorcycle","airplane","bus","train","truck","boat","traffic light","fire hydrant","stop sign","parking meter","bench","bird","cat","dog","horse","sheep","cow","elephant","bear","zebra","giraffe","backpack","umbrella","handbag","tie","suitcase","frisbee","skis","snowboard","sports ball","kite","baseball bat","baseball glove","skateboard","surfboard","tennis racket","bottle","wine glass","cup","fork","knife","spoon","bowl","banana","apple","sandwich","orange","broccoli","carrot","hot dog","pizza","donut","cake","chair","couch","potted plant","bed","dining table","toilet","tv","laptop","mouse","remote","keyboard","cell phone","microwave","oven","toaster","sink","refrigerator","book","clock","vase","scissors","teddy bear","hair drier","toothbrush"]
+def _mask_color(cls_id):
+    palette = [
+        (54, 67, 244), (99, 30, 233), (176, 39, 156), (183, 58, 103),
+        (181, 81, 63), (243, 150, 33), (244, 169, 3), (212, 188, 0),
+        (136, 150, 0), (80, 175, 76), (74, 195, 139), (57, 220, 205),
+        (59, 235, 255), (7, 193, 255), (0, 152, 255), (34, 87, 255),
+        (72, 85, 121), (158, 158, 158), (139, 125, 96),
+    ]
+    return palette[int(cls_id) % len(palette)]
+
+
+COCO_CLASSES = ["person","bicycle","car","motorcycle","airplane","bus","train","truck","boat","traffic light","fire hydrant","stop sign","parking meter","bench","bird","cat","dog","horse","sheep","cow","elephant","bear","zebra","giraffe","backpack","umbrella","handbag","tie","suitcase","frisbee","skis","snowboard","sports ball","kite","baseball bat","baseball glove","skateboard","surfboard","tennis racket","bottle","wine glass","cup","fork","knife","spoon","bowl","banana","apple","sandwich","orange","broccoli","carrot","hot dog","pizza","donut","cake","chair","couch","potted plant","bed","dining table","toilet","tv","laptop","mouse","remote","keyboard","cell phone","microwave","oven","toaster","sink","refrigerator","book","clock","vase","scissors","teddy bear","hair drier","toothbrush"]
+
+
+def unletterbox_boxes(boxes, lb_info):
+    """Map xyxy boxes from the letterboxed input back to the original frame.
+    lb_info = (ratio, dw, dh) captured by preprocess_frame."""
+    if boxes is None or len(boxes) == 0:
+        return boxes
+    ratio, dw, dh = lb_info
+    out = boxes.copy().astype(np.float32)
+    out[:, [0, 2]] = (out[:, [0, 2]] - dw) / ratio
+    out[:, [1, 3]] = (out[:, [1, 3]] - dh) / ratio
+    return out
+
+
+def unletterbox_masks(masks, lb_info, frame_shape):
+    """Map (N, ih, iw) masks back to the original frame: crop the letterbox
+    padding first, then resize to the frame. lb_info = (ratio, dw, dh)."""
+    if masks is None or len(masks) == 0:
+        return masks
+    ratio, dw, dh = lb_info
+    ih, iw = masks.shape[1], masks.shape[2]
+    content_w = int(round(iw - 2 * dw)) if dw * 2 < iw else iw
+    content_h = int(round(ih - 2 * dh)) if dh * 2 < ih else ih
+    # Letterbox pads symmetrically (dw may be split left/right by the helper);
+    # be conservative and use the helper convention: pad is centered.
+    x0 = int(round(dw)) if dw > 0 else 0
+    y0 = int(round(dh)) if dh > 0 else 0
+    x1 = iw - x0 if dw > 0 else iw
+    y1 = ih - y0 if dh > 0 else ih
+    crops = masks[:, y0:y1, x0:x1]
+    fh, fw = frame_shape[:2]
+    out = np.stack([
+        cv2.resize(m, (fw, fh), interpolation=cv2.INTER_LINEAR)
+        for m in crops
+    ], axis=0)
+    return out
+
+
+def draw_boxes(image, boxes, scores, class_ids, masks=None, lb_info=None,
+               mask_thresh=0.5, mask_alpha=0.45):
+    """Draw instance masks (overlaid, per-class color) + boxes + labels."""
     h, w = image.shape[:2]
+    if masks is not None and len(masks):
+        frame_masks = unletterbox_masks(masks, lb_info, image.shape) \
+            if lb_info is not None else masks
+        binary = frame_masks > mask_thresh
+        overlay = image.copy()
+        for i, cl in enumerate(class_ids):
+            color = _mask_color(cl)
+            overlay[binary[i]] = (
+                (overlay[binary[i]].astype(np.float32) * (1 - mask_alpha)
+                 + np.array(color, dtype=np.float32) * mask_alpha)
+            ).astype(np.uint8)
+        image[binary] = overlay[binary]
     for i, box in enumerate(boxes):
-        if scores[i] < 0.25:
-            continue
         x1, y1, x2, y2 = box.astype(int)
-        cls_id = int(class_ids[i]) % 80
-        color = ((cls_id*37)%256, (cls_id*73)%256, (cls_id*151)%256)
+        cl = int(class_ids[i]) % len(COCO_CLASSES)
+        color = _mask_color(cl)
         cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
-        label = f"{COCO_CLASSES[cls_id]} {scores[i]:.2f}"
-        cv2.putText(image, label, (x1, y1-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+        cv2.putText(image, f'{COCO_CLASSES[cl]} {float(scores[i]):.2f}',
+                    (x1, max(20, y1 - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                    color, 1)
+
 
 def preprocess_frame(frame, co_helper):
     """Letterbox + BGR to RGB. Returns (img, lb_info) where lb_info captures the
@@ -864,10 +1106,10 @@ def inference_loop(cap, model, co_helper, is_video_file, target_fps):
             inference_time = time.time() - start_time
 
             if outputs is not None:
-                # obj, nms = det_config.get()
-                boxes, scores, class_ids = post_process_hailo(outputs, 0, 0, IMG_SIZE[1], IMG_SIZE[0])
+                obj, nms = det_config.get()
+                boxes, scores, class_ids, masks = post_process_hailo(outputs, obj, nms, IMG_SIZE[1], IMG_SIZE[0])
                 if boxes is not None:
-                    draw_boxes(frame, boxes, scores, class_ids, lb_info)
+                    draw_boxes(frame, boxes, scores, class_ids, masks, lb_info)
 
             inf_fps = 1.0 / inference_time if inference_time > 0 else 0
             fps_counter = 0.9 * fps_counter + 0.1 * inf_fps if fps_counter > 0 else inf_fps
