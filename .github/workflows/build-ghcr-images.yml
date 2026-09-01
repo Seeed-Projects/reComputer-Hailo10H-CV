@@ -28,6 +28,9 @@ on:
           - yolo26m_seg
           - paddle_ocr_v5_mobile_detection
           - paddle_ocr_v5_mobile_recognition
+          - damoyolo_tinynas_l20_t
+          - damoyolo_tinynas_l25_s
+          - damoyolo_tinynas_l35_m
 
 permissions:
   contents: read
@@ -79,6 +82,15 @@ jobs:
           - model: paddle_ocr_v5_mobile_recognition
             image: paddle_ocr_v5_mobile_recognition
             description: PaddleOCR v5 Mobile text recognition
+          - model: damoyolo_tinynas_l20_t
+            image: damoyolo_tinynas_l20_t
+            description: DAMO-YOLO TinyNAS-L20-T object detection
+          - model: damoyolo_tinynas_l25_s
+            image: damoyolo_tinynas_l25_s
+            description: DAMO-YOLO TinyNAS-L25-S object detection
+          - model: damoyolo_tinynas_l35_m
+            image: damoyolo_tinynas_l35_m
+            description: DAMO-YOLO TinyNAS-L35-M object detection
 
     steps:
       - name: Checkout

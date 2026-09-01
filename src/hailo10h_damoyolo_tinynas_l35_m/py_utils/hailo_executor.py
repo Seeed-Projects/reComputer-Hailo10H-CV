@@ -1,0 +1,106 @@
+import threading
+
+import numpy as np
+
+from hailo_platform import HEF, VDevice
+
+
+INFERENCE_TIMEOUT_MS = 10_000
+
+
+class HailoInfer:
+    """Persistent HailoRT 5.1.1 inference session.
+
+    HailoRT model configuration is intentionally kept alive for the lifetime
+    of this wrapper. Configuring the model and rebuilding bindings per frame
+    adds enough host overhead to collapse real-time throughput.
+    """
+
+    def __init__(self, hef_path):
+        self.target = VDevice()
+        self._run_lock = threading.Lock()
+        self._released = False
+
+        # HailoRT 5.x new API (Hailo-10H compatible)
+        self.hef = HEF(hef_path)
+        self.model = self.target.create_infer_model(hef_path)
+
+        self.input_info = self.model.input()
+
+        output_vstream_infos = self.hef.get_output_vstream_infos()
+        if not output_vstream_infos:
+            raise ValueError("Model has no output vstreams")
+
+        self.output_names = []
+        self._output_dtypes = {}
+        for info in output_vstream_infos:
+            output_format_type = info.format.type
+            output_dtype_name = str(output_format_type).split(".")[-1].lower()
+            try:
+                dtype = np.dtype(output_dtype_name)
+            except TypeError as exc:
+                raise ValueError(
+                    f"Unsupported Hailo output format: {output_format_type}"
+                ) from exc
+            self.model.output(info.name).set_format_type(output_format_type)
+            self.output_names.append(info.name)
+            self._output_dtypes[info.name] = dtype
+
+        # Shape may be (H, W, C) or (N, H, W, C) depending on API version
+        shape = self.input_info.shape
+        if len(shape) == 4:
+            self.input_h, self.input_w = shape[1], shape[2]
+        else:
+            self.input_h, self.input_w = shape[0], shape[1]
+
+        print(f"Hailo infer model loaded: {hef_path}")
+        print(f"  Input:  {self.input_info.name} shape={self.input_info.shape}")
+        for name in self.output_names:
+            print(f"  Output: {name} shape={self.model.output(name).shape}")
+
+        # HailoRT 5.1.1 InferModel API: enter the configuration context once,
+        # then reuse the configured model, bindings and device-side pipeline.
+        self._configured_context = self.model.configure()
+        self._configured_model = self._configured_context.__enter__()
+        self._output_buffers = {
+            name: np.empty(
+                self.model.output(name).shape,
+                dtype=self._output_dtypes[name],
+            )
+            for name in self.output_names
+        }
+        self._bindings = self._configured_model.create_bindings(
+            output_buffers=self._output_buffers
+        )
+
+    def run(self, image):
+        if image.dtype != np.uint8:
+            image = image.astype(np.uint8)
+        if image.ndim == 3:
+            image = np.expand_dims(image, axis=0)
+
+        # Preview, REST and offline analysis can call the same executor from
+        # different threads. One persistent binding set is therefore guarded,
+        # and outputs are copied before the lock is released so a later frame
+        # cannot overwrite data that is still being post-processed.
+        with self._run_lock:
+            if self._released:
+                raise RuntimeError("HailoInfer has already been released")
+            self._bindings.input().set_buffer(image)
+            self._configured_model.run(
+                [self._bindings], timeout=INFERENCE_TIMEOUT_MS
+            )
+            return {
+                name: self._bindings.output(name).get_buffer().copy()
+                for name in self.output_names
+            }
+
+    def release(self):
+        with self._run_lock:
+            if self._released:
+                return
+            try:
+                self._configured_context.__exit__(None, None, None)
+            finally:
+                self.target.release()
+                self._released = True
