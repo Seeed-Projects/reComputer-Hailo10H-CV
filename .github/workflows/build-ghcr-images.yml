@@ -31,6 +31,8 @@ on:
           - damoyolo_tinynas_l20_t
           - damoyolo_tinynas_l25_s
           - damoyolo_tinynas_l35_m
+          - lprnet
+          - tiny_yolov4_license_plates
 
 permissions:
   contents: read
@@ -91,6 +93,12 @@ jobs:
           - model: damoyolo_tinynas_l35_m
             image: damoyolo_tinynas_l35_m
             description: DAMO-YOLO TinyNAS-L35-M object detection
+          - model: lprnet
+            image: lprnet
+            description: Tiny-YOLOv4 plus LPRNet license plate pipeline
+          - model: tiny_yolov4_license_plates
+            image: tiny_yolov4_license_plates
+            description: Tiny-YOLOv4 license plate detection
 
     steps:
       - name: Checkout
