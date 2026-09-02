@@ -520,7 +520,19 @@ def post_process_hailo(hailo_output, obj_thresh, nms_thresh, input_h, input_w):
 
     if not _DET_OUTPUT_LOGGED:
         for i, h in enumerate(heads):
-            print(f"[Tiny-YOLOv4-License-Plates] head{i}: shape={h.shape}", flush=True)
+            # Raw-diagnostics: obj/xy/wh channel stats per head. The official
+            # layout is anchor-major (C = a0[xy,wh,obj,cls] | a1[... | a2[...]);
+            # obj lives at channels 4, 10, 16. If those channels look like
+            # pre-sigmoid logits but the rest saturate, the layout is off.
+            c4 = h[..., 4].astype(np.float64)
+            c10 = h[..., 10].astype(np.float64)
+            c16 = h[..., 16].astype(np.float64)
+            obj_max = float(max(c4.max(), c10.max(), c16.max()))
+            obj_sig = 1.0 / (1.0 + np.exp(-max(c4.max(), c10.max(), c16.max())))
+            print(f"[Tiny-YOLOv4-License-Plates] head{i}: shape={h.shape} "
+                  f"raw range=[{h.min():.2f},{h.max():.2f}] "
+                  f"obj-ch(4,10,16) max={obj_max:.2f} -> sigmoid={obj_sig:.4f} "
+                  f"c0(x) max={h[...,0].max():.2f} c2(w) max={h[...,2].max():.2f}", flush=True)
         _DET_OUTPUT_LOGGED = True
 
     if len(heads) < 2:
