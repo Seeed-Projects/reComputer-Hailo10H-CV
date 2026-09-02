@@ -2,7 +2,7 @@ import threading
 
 import numpy as np
 
-from hailo_platform import HEF, VDevice
+from hailo_platform import HEF, VDevice, FormatType
 
 
 INFERENCE_TIMEOUT_MS = 10_000
@@ -39,17 +39,14 @@ class HailoInfer:
         self.output_names = []
         self._output_dtypes = {}
         for info in output_vstream_infos:
-            output_format_type = info.format.type
-            output_dtype_name = str(output_format_type).split(".")[-1].lower()
-            try:
-                dtype = np.dtype(output_dtype_name)
-            except TypeError as exc:
-                raise ValueError(
-                    f"Unsupported Hailo output format: {output_format_type}"
-                ) from exc
-            self.model.output(info.name).set_format_type(output_format_type)
+            # Always request FLOAT32 outputs: the HEF metadata format is the
+            # on-chip quantized encoding (e.g. UINT16 fixed-point), and the
+            # HailoRT SDK performs the dequantization when converting to
+            # FLOAT32. Reading the raw quantized buffers produced values in
+            # the tens of thousands and zero valid detections.
+            self.model.output(info.name).set_format_type(FormatType.FLOAT32)
             self.output_names.append(info.name)
-            self._output_dtypes[info.name] = dtype
+            self._output_dtypes[info.name] = np.float32
 
         # Shape may be (H, W, C) or (N, H, W, C) depending on API version
         shape = self.input_info.shape
