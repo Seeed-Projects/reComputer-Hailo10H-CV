@@ -16,8 +16,13 @@ class HailoInfer:
     adds enough host overhead to collapse real-time throughput.
     """
 
-    def __init__(self, hef_path):
-        self.target = VDevice()
+    def __init__(self, hef_path, shared_device=None):
+        # Pipelines that load two HEFs must share one VDevice: each VDevice()
+        # claims the physical device, so a second VDevice() fails with
+        # HAILO_OUT_OF_PHYSICAL_DEVICES(74) on single-accelerator boards.
+        # Pass shared_device=first_model.target when constructing the second.
+        self.target = shared_device if shared_device is not None else VDevice()
+        self._owns_device = shared_device is None
         self._run_lock = threading.Lock()
         self._released = False
 
@@ -102,5 +107,6 @@ class HailoInfer:
             try:
                 self._configured_context.__exit__(None, None, None)
             finally:
-                self.target.release()
+                if self._owns_device:
+                    self.target.release()
                 self._released = True

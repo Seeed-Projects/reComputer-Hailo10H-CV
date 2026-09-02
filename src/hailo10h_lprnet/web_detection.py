@@ -769,7 +769,9 @@ def main():
 
     global _global_detector_model, _global_lpr_model, _global_co_helper, IMG_SIZE, LPR_SIZE
     detector_model = HailoInfer(args.detector_model_path)
-    lpr_model = HailoInfer(args.model_path)
+    # Share the detector's VDevice: a second VDevice() would claim the
+    # single physical accelerator and fail with error 74.
+    lpr_model = HailoInfer(args.model_path, shared_device=detector_model.target)
     IMG_SIZE = (detector_model.input_w, detector_model.input_h)
     LPR_SIZE = (lpr_model.input_w, lpr_model.input_h)
     print(f"Detector input size: {detector_model.input_w}x{detector_model.input_h}", flush=True)
