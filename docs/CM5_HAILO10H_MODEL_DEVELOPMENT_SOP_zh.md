@@ -150,7 +150,7 @@ apt-cache policy hailo-all hailo-h10-all hailort python3-hailort
 ```python
 import numpy as np
 
-from hailo_platform import HEF, VDevice
+from hailo_platform import HEF, VDevice, FormatType
 
 
 INFERENCE_TIMEOUT_MS = 10_000
@@ -164,11 +164,13 @@ class HailoInfer:
         self.input_info = self.model.input()
         self.output_info = self.model.output()
 
-        output_vstream_info = self.hef.get_output_vstream_infos()[0]
-        output_format_type = output_vstream_info.format.type
-        output_dtype_name = str(output_format_type).split(".")[-1].lower()
-        self.output_dtype = np.dtype(output_dtype_name)
-        self.output_info.set_format_type(output_format_type)
+        # 输出统一请求 FLOAT32：HEF 元数据里的 format.type 是芯片端量化
+        # 编码（如 UINT16 定点，直接读出来是 1~3 万的原始值）。必须用
+        # set_format_type(FormatType.FLOAT32) 让 HailoRT SDK 在拷出时去量化。
+        # 2026-09 教训：lprnet 零检测排查发现按元数据 dtype 读缓冲导致
+        # 全部输出数值错误（过 sigmoid 饱和成 1，画面"看起来正常"）。
+        self.output_info.set_format_type(FormatType.FLOAT32)
+        self.output_dtype = np.float32
 
     def run(self, image):
         if image.dtype != np.uint8:
@@ -246,7 +248,8 @@ mock 测试只能防止 Python API 调用回归，不能替代真实 Hailo-10H �
 - resize、letterbox 或 crop；
 - 插值方式；
 - 是否归一化；
-- `uint8`、`float32` 或量化类型；
+- 输出数据编码：**必须用 `set_format_type(FormatType.FLOAT32)` 请求去量化输出**，不得直接按 HEF 元数据的 `format.type` 分配缓冲（那是芯片端定点编码，读出为万级原始值）；
+- 输入像素格式：`uint8` 直通或归一化，RGB/BGR 以 alls 是否含 `input_conversion(bgr_to_rgb)` 为准；
 - HWC/NHWC/NCHW；
 - 原图到模型输入的缩放和填充参数。
 
@@ -347,6 +350,26 @@ content/README.md
 content/models/README.md
 ```
 
+先确认模型是以下哪一种情况：
+
+1. **AI Lab 中尚无该模型**：新建一个模型 YAML 和一个 Hailo-10H Wiki。
+2. **AI Lab 中已有同名模型，但只有其他平台**：在原 YAML 中追加 Hailo-10H 的设备、引擎、部署命令、Wiki 路由和下载来源，不得再创建第二个同 slug YAML。
+3. **AI Lab 中已有 Hailo-10H 配置**：只修正本次确认有误的字段，避免覆盖其他平台内容。
+
+模型 YAML 位于：
+
+```text
+content/models/<type>/<family>/<slug>.yaml
+```
+
+Hailo-10H Wiki 位于：
+
+```text
+content/models/wikis/pi5-hailo10h-<slug>.md
+```
+
+不要手工修改 `lib/models-data.generated.ts`、`data/models.json` 或 `public/data/models.json`；这些文件由 `npm run build:models` 生成。
+
 ### 13.1 平台和部署项必须一致
 
 示例：
@@ -372,33 +395,105 @@ deploy:
 
 `devices[].id`、`deviceEngines` 的键和 `deploy[].deviceId` 必须完全相同。平台显示名称要明确区分 Hailo-8 和 Hailo-10H。
 
+新增 Hailo-10H 平台时，最小完整结构如下。模型名称、分类、大小、接口、HEF 路径和命令参数必须以实际模型为准，不得照抄示例中的事实字段：
+
+```yaml
+id: <model-id>
+name: <display-name>
+slug: <slug>
+description: <verified-description>
+overview: <verified-overview>
+type: cv
+secondaryCategoryId: <family>
+secondaryCategoryName: <family-display-name>
+featured: false
+platforms:
+  - R Series
+updatedAt: "YYYY-MM-DD"
+downloadSources:
+  - https://github.com/orgs/Seeed-Projects/packages?repo_name=reComputer-Hailo10H-CV&package=recomputer-hailo10h-cv%2F<ghcr-package-name>
+size: <verified-size>
+ram: 4GB+
+precision: Hailo HEF / HailoRT
+devices:
+  - id: reComputer R Series (CM5 + Hailo-10H)
+    label: reComputer R Series (CM5 + Hailo-10H)
+deviceEngines:
+  reComputer R Series (CM5 + Hailo-10H):
+    - id: hailo
+      label: HailoRT
+deploy:
+  - deviceId: reComputer R Series (CM5 + Hailo-10H)
+    engineId: hailo
+    command: |-
+      sudo docker run --rm \
+        --name cm5-hailo10h-<short-name> \
+        --privileged \
+        --net=host \
+        -e PYTHONUNBUFFERED=1 \
+        --device /dev/hailo0:/dev/hailo0 \
+        -v /usr/lib/libhailort.so.5.1.1:/usr/lib/libhailort.so.5.1.1:ro \
+        -v /usr/lib/libhailort.so:/usr/lib/libhailort.so:ro \
+        ghcr.io/seeed-projects/recomputer-hailo10h-cv/<ghcr-package-name>:latest \
+        python web_detection.py --model_path model/<model>.hef --video_path video/test.mp4
+wikiPlatforms:
+  - doc: wikis/pi5-hailo10h-<slug>.md
+    label: reComputer R Series (CM5 + Hailo-10H)
+    deviceMatch:
+      - Hailo-10H
+      - R Series
+      - CM5
+```
+
+如果 YAML 已经包含 Hailo-8 等平台，应保留原有 `devices`、`deviceEngines`、`deploy`、`wikiPlatforms` 和 `downloadSources` 条目，只追加 Hailo-10H 条目。
+
 ### 13.2 Wiki 路由
 
 同一个模型同时支持 Hailo-8 和 Hailo-10H 时，使用 `wikiPlatforms` 为两个硬件提供独立文档，并把更具体的匹配词放在前面。例如：
 
 ```yaml
 wikiPlatforms:
-  - deviceMatch:
+  - doc: wikis/pi5-hailo10h-<slug>.md
+    label: reComputer R Series (CM5 + Hailo-10H)
+    deviceMatch:
       - Hailo-10H
       - R Series
       - CM5
-    doc: wikis/pi5-hailo10h-<slug>.md
-  - deviceMatch:
+  - doc: wikis/pi5-hailo8-<slug>.md
+    label: reComputer R Series (CM5 + Hailo-8)
+    deviceMatch:
       - Hailo-8
       - R Series
       - CM5
-    doc: wikis/pi5-hailo8-<slug>.md
 ```
 
-每个 `doc` 必须真实存在。不要把 Hailo-8 的驱动、库版本或命令复制到 Hailo-10H 文档。
+每个 `doc` 必须真实存在。`wikiPlatforms` 存在时会优先于 `wiki` 和 `wikiRef`；不要同时维护互相矛盾的正文。不要把 Hailo-8 的驱动、库版本或命令复制到 Hailo-10H 文档。
+
+Hailo-10H Wiki 至少应包括：硬件与 HailoRT 版本要求、设备检查、完整 `docker pull`/`docker run` 命令、浏览器访问地址、REST API 示例、预期结果和常见错误。Wiki 中的运行命令必须与 YAML 的 `deploy.command` 保持一致。
 
 ### 13.3 下载统计
 
-模型 YAML 必须声明 GHCR 包地址，否则镜像即使被下载，AI Lab 也不知道到哪里查询下载量：
+模型 YAML 必须显式声明 GHCR 包地址，否则镜像即使被下载，AI Lab 也不知道到哪里查询下载量。生成脚本不会从 `deploy.command` 自动推导下载来源：
 
 ```yaml
 downloadSources:
-  - https://github.com/orgs/Seeed-Projects/packages?repo_name=reComputer-Hailo10H-CV&package=recomputer-hailo10h-cv%2F<slug>
+  - https://github.com/orgs/Seeed-Projects/packages?repo_name=reComputer-Hailo10H-CV&package=recomputer-hailo10h-cv%2F<ghcr-package-name>
+```
+
+其中：
+
+- `repo_name` 必须是发布镜像的 GitHub 仓库名 `reComputer-Hailo10H-CV`；
+- `package` 必须是 GHCR 包路径 `recomputer-hailo10h-cv/<ghcr-package-name>` 的 URL 编码形式；
+- `%2F` 是 `/` 的编码，不能删除或写成模型目录名的前缀；
+- `<ghcr-package-name>` 必须与 Docker 镜像最后一级完全一致。例如镜像为 `.../mspn_regnetx_800mf:latest`，来源中的包名也必须是 `mspn_regnetx_800mf`；
+- 不要添加手写的 `downloads: <number>`，下载次数由站点运行时查询。
+
+同一 AI Lab 模型同时发布 Hailo-8 和 Hailo-10H 时，应在同一个 YAML 中列出两个来源，页面会把可成功获取的来源合计到该模型总下载量：
+
+```yaml
+downloadSources:
+  - https://github.com/orgs/Seeed-Projects/packages?repo_name=reComputer-Hailo8-CV&package=recomputer-hailo8-cv%2F<hailo8-package-name>
+  - https://github.com/orgs/Seeed-Projects/packages?repo_name=reComputer-Hailo10H-CV&package=recomputer-hailo10h-cv%2F<ghcr-package-name>
 ```
 
 规则：
@@ -407,10 +502,23 @@ downloadSources:
 - 添加来源后：可读取 GitHub 包的累计统计，不是从添加日期重新计数；
 - 统计值为 0 时，前端可能隐藏数字；
 - GitHub 或站点缓存可能造成显示延迟；
-- 同一模型的 Hailo-8 和 Hailo-10H 镜像需要同时列出两个来源，页面逻辑可能合计；
+- 同一模型的 Hailo-8 和 Hailo-10H 镜像需要同时列出两个来源，页面按模型汇总可获取的统计；
 - `yolo26n_seg`、`yolo26m_seg`、`yolo26s_seg` 等独立 slug 应分别配置来源，不能错误共用一个包。
 
 不得编造下载次数。
+
+配置后先确认生成数据保留了该字段：
+
+```bash
+npm run build:models
+rg -n -A3 'downloadSources' \
+  content/models/<type>/<family>/<slug>.yaml \
+  data/models.json \
+  public/data/models.json \
+  lib/models-data.generated.ts
+```
+
+如果本地页面仍不显示数字，依次检查：GHCR 包是否真实存在且可公开读取、URL 中仓库名和包名是否正确、下载数是否大于 0、`/api/github-downloads` 是否返回该模型 ID，以及 GitHub/站点五分钟缓存是否尚未刷新。构建成功只能证明 YAML 可生成，不能证明 GitHub 实时统计一定可访问。
 
 ### 13.4 生成和验证
 
@@ -431,6 +539,25 @@ npm run dev
 - Wiki 内容；
 - 下载量显示或其合理的缓存延迟。
 
+提交 AI Lab 时，只暂存本模型的 YAML、Hailo-10H Wiki，以及本次 `build:models` 确实生成的对应数据变更。先逐项检查，不要使用 `git add .`：
+
+```bash
+git status --short
+git diff -- content/models/<type>/<family>/<slug>.yaml \
+  content/models/wikis/pi5-hailo10h-<slug>.md
+git add -- \
+  content/models/<type>/<family>/<slug>.yaml \
+  content/models/wikis/pi5-hailo10h-<slug>.md \
+  lib/models-data.generated.ts \
+  data/models.json \
+  public/data/models.json \
+  scripts/models-manifest.json
+git diff --cached --check
+git diff --cached
+```
+
+如果生成文件中混入其他本地未提交模型的数据，不要直接提交；应先隔离本次变更，或在干净分支/worktree 中重新运行生成命令。
+
 ## 14. 真实设备验收
 
 至少完成以下测试：
@@ -439,7 +566,8 @@ npm run dev
 2. 用仓库自带 `test.mp4` 连续运行，不出现推理线程异常。
 3. 打开 `http://<CM5-IP>:8000`，视频流持续刷新。
 4. 检查结果类别、颜色、坐标和原图比例。
-5. 测试一次上传视频或 predict API。
+5. **首次推理必须打印输出数值范围并确认量纲合理**（logit 约 ±10、概率 0~1、mask 0~1）；出现万级数值说明读到了量化原始值，必须改 executor。不得以"画面有内容"作为通过标准——量化错误下 sigmoid 饱和也会出画面，但数值全错。
+6. 测试一次上传视频或 predict API。
 6. 停止后确认容器退出、设备可被下一次运行正常打开。
 7. 把完整命令、镜像摘要、HailoRT 版本和结果截图保存到测试记录。
 
@@ -459,6 +587,8 @@ npm run dev
 | HEF 加载失败 | HEF 为其他 Hailo 芯片或编译版本不兼容 | 下载 Hailo-10H 对应 HEF 并核对来源 |
 | 页面启动但无结果 | 后台推理线程已崩溃 | 检查完整容器日志，不能只看 HTTP 启动信息 |
 | AI Lab 不显示下载量 | YAML 缺少或写错 `downloadSources` | 配置对应 GHCR 包 URL 后重新生成模型数据 |
+| 已配置来源但下载量仍为空 | 包不存在/不可公开读取、包名不一致、下载数为 0 或缓存未刷新 | 核对 GHCR 包页、`/api/github-downloads` 返回值并等待缓存刷新 |
+| Hailo-8 与 Hailo-10H 只统计一个 | 同一模型 YAML 只列了一个仓库来源 | 在同一 `downloadSources` 数组中列出两个 GHCR 包 URL |
 
 ## 16. 提交和发布边界
 
@@ -504,11 +634,15 @@ git diff --cached
 - [ ] 平台明确写为 `CM5 + Hailo-10H`。
 - [ ] `devices`、`deviceEngines`、`deploy` ID 完全一致。
 - [ ] Wiki 文件存在且命令可复制执行。
-- [ ] `downloadSources` 指向正确 GHCR 包。
+- [ ] `downloadSources` 已显式配置，仓库名、包名和 Docker 镜像完全对应。
+- [ ] 双硬件模型同时列出 Hailo-8 与 Hailo-10H 两个下载来源。
+- [ ] 未手写 `downloads` 数字，且每个独立镜像包没有错误共用统计来源。
 - [ ] 双硬件模型可分别下拉选择 Hailo-8/Hailo-10H。
 - [ ] `npm run build:models` 通过。
+- [ ] 生成数据中可以检索到本模型的 `downloadSources`。
 - [ ] `npm run build` 通过。
-- [ ] 本地页面完成视觉和命令检查。
+- [ ] 本地模型列表、详情页、平台切换、Wiki、部署命令和下载量接口已检查。
+- [ ] AI Lab 提交只包含本模型 YAML、Wiki 和经审核的生成文件。
 
 ## 18. 可交给其他 AI 的任务模板
 
@@ -529,8 +663,10 @@ HEF 来源：<官方 URL>
    configured_model.run([bindings], timeout=10_000)。
 4. 平台名必须明确为 reComputer R Series (CM5 + Hailo-10H)。
 5. 配置正确的 GHCR downloadSources。
-6. 只修改和提交该模型相关文件，不处理其他未提交内容。
-7. 运行单元测试、语法检查、AI Lab 模型生成和构建。
-8. 给出真实 CM5 + Hailo-10H 测试命令；没有硬件测试时必须明确说明。
-9. 完成后报告文件清单、来源、验证结果和仍需人工确认的内容。
+6. 若模型同时支持 Hailo-8 和 Hailo-10H，在同一 YAML 中保留并配置两个下载来源、两套部署项和两份平台 Wiki。
+7. 只修改和提交该模型相关文件，不处理其他未提交内容。
+8. 运行单元测试、语法检查、AI Lab 模型生成和构建，并确认生成数据包含 downloadSources。
+9. 本地检查模型列表、详情页、平台下拉、Wiki、部署命令和 /api/github-downloads；没有实时数字时报告具体原因，不得伪造。
+10. 给出真实 CM5 + Hailo-10H 测试命令；没有硬件测试时必须明确说明。
+11. 完成后报告文件清单、来源、验证结果和仍需人工确认的内容。
 ```
