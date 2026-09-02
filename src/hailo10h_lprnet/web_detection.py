@@ -608,8 +608,9 @@ def decode_lpr(hailo_output):
         named = {"output_0": np.asarray(hailo_output)}
 
     if not _OCR_OUTPUT_LOGGED:
+        # One-shot output-range log (SOP §14 acceptance).
         for name, arr in named.items():
-            print(f"[LPRNet] {name}: shape={arr.shape} dtype={arr.dtype}", flush=True)
+            print(f"[LPRNet] {name}: shape={arr.shape} range=[{arr.min():.2f}, {arr.max():.2f}]", flush=True)
         _OCR_OUTPUT_LOGGED = True
 
     tensor = None
