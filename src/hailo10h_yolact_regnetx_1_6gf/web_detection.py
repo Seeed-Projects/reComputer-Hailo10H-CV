@@ -720,6 +720,7 @@ def run_fastapi(host, port):
 # ---------------------------------------------------------------------------
 
 _priors_cache = None
+_DET_OUTPUT_LOGGED = False
 
 
 def _make_priors(anchors, img_size):
@@ -976,8 +977,22 @@ class YolactPostprocess:
             masks = [heads[(f, "mask")][0] for f, r in self._HEAD_ORDER if r == "mask"]
             confs = [heads[(f, "conf")][0] for f, r in self._HEAD_ORDER if r == "conf"]
         except (KeyError, IndexError):
-            print(f"[YOLACT] unexpected output layout: {[a.shape for a in endnodes]}", flush=True)
+            print(f"[YOLACT] unexpected output layout: "
+                  f"{sorted((a.shape, str(a.dtype)) for a in endnodes)}", flush=True)
             return None, None, None, None
+
+        global _DET_OUTPUT_LOGGED
+        if not _DET_OUTPUT_LOGGED:
+            # One-shot output-range log (SOP §14 acceptance): heads must be
+            # FLOAT32 logits/probabilities — tens-of-thousands values mean
+            # the executor returned the quantized encoding.
+            for f, role in self._HEAD_ORDER:
+                a = heads[(f, role)][0]
+                print(f"[YOLACT] {role}@{f}: shape={a.shape} "
+                      f"range=[{a.min():.2f}, {a.max():.2f}]", flush=True)
+            print(f"[YOLACT] proto: shape={proto.shape} "
+                  f"range=[{proto.min():.2f}, {proto.max():.2f}]", flush=True)
+            _DET_OUTPUT_LOGGED = True
 
         priors = _get_priors()
         num_priors = priors.shape[0]
