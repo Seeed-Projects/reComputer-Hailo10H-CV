@@ -33,6 +33,8 @@ on:
           - damoyolo_tinynas_l35_m
           - lprnet
           - tiny_yolov4_license_plates
+          - yolact_regnetx_800mf
+          - yolact_regnetx_1_6gf
 
 permissions:
   contents: read
@@ -99,6 +101,12 @@ jobs:
           - model: tiny_yolov4_license_plates
             image: tiny_yolov4_license_plates
             description: Tiny-YOLOv4 license plate detection
+          - model: yolact_regnetx_800mf
+            image: yolact_regnetx_800mf
+            description: YOLACT-RegNetX-800MF instance segmentation
+          - model: yolact_regnetx_1_6gf
+            image: yolact_regnetx_1_6gf
+            description: YOLACT-RegNetX-1.6GF instance segmentation
 
     steps:
       - name: Checkout
