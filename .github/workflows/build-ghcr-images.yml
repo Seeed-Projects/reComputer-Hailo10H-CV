@@ -35,6 +35,8 @@ on:
           - tiny_yolov4_license_plates
           - yolact_regnetx_800mf
           - yolact_regnetx_1_6gf
+          - tiny_yolov3
+          - tiny_yolov4
 
 permissions:
   contents: read
@@ -107,6 +109,12 @@ jobs:
           - model: yolact_regnetx_1_6gf
             image: yolact_regnetx_1_6gf
             description: YOLACT-RegNetX-1.6GF instance segmentation
+          - model: tiny_yolov3
+            image: tiny_yolov3
+            description: Tiny-YOLOv3 COCO object detection
+          - model: tiny_yolov4
+            image: tiny_yolov4
+            description: Tiny-YOLOv4 COCO object detection
 
     steps:
       - name: Checkout
