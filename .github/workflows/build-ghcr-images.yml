@@ -37,6 +37,11 @@ on:
           - yolact_regnetx_1_6gf
           - tiny_yolov3
           - tiny_yolov4
+          - yolov11n
+          - yolov11s
+          - yolov11m
+          - yolov11l
+          - yolov11x
 
 permissions:
   contents: read
@@ -115,6 +120,21 @@ jobs:
           - model: tiny_yolov4
             image: tiny_yolov4
             description: Tiny-YOLOv4 COCO object detection
+          - model: yolov11n
+            image: yolov11n
+            description: YOLOv11n COCO object detection
+          - model: yolov11s
+            image: yolov11s
+            description: YOLOv11s COCO object detection
+          - model: yolov11m
+            image: yolov11m
+            description: YOLOv11m COCO object detection
+          - model: yolov11l
+            image: yolov11l
+            description: YOLOv11l COCO object detection
+          - model: yolov11x
+            image: yolov11x
+            description: YOLOv11x COCO object detection
 
     steps:
       - name: Checkout
