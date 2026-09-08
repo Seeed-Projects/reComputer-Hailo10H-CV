@@ -32,102 +32,91 @@ OBJ_THRESH = 0.25
 NMS_THRESH = 0.45
 IMG_SIZE = (640, 640)  # (width, height) — overridden at runtime from the .hef
 
-# YOLOv11l outputs 80 classes (base config: classes=80,
-# labels_offset=1). The official tf_postproc_nms maps cls_id -> COCO category
-# id (cls_id + 1). This list is indexed by cls_id (0..79) with COCO category
-# IDs 1..80; the 10 unused COCO IDs (12, 26, 29, 30, 45, 66, 68, 69, 71, 83)
-# appear as "N/A" and are not drawn. Verify the mapping from the first-
-# inference log on hardware (SOP §10).
+# YOLOv11l outputs the standard continuous 80 COCO classes (base config:
+# classes=80, on-chip NMS). cls_id from the NMS buffer indexes this tuple
+# directly: DEFAULT_CLASSES[cls_id] in COCO class order, no gaps. Verify the
+# mapping from the first-inference log on hardware (SOP §10).
 DEFAULT_CLASSES = (
-    "person",          # 0  -> id 1
-    "bicycle",         # 1  -> id 2
-    "car",             # 2  -> id 3
-    "motorcycle",      # 3  -> id 4
-    "airplane",        # 4  -> id 5
-    "bus",             # 5  -> id 6
-    "train",           # 6  -> id 7
-    "truck",           # 7  -> id 8
-    "boat",            # 8  -> id 9
-    "traffic light",   # 9  -> id 10
-    "fire hydrant",    # 10 -> id 11
-    "N/A",             # 11 -> id 12 (unused)
-    "stop sign",       # 12 -> id 13
-    "parking meter",   # 13 -> id 14
-    "bench",           # 14 -> id 15
-    "bird",            # 15 -> id 16
-    "cat",             # 16 -> id 17
-    "dog",             # 17 -> id 18
-    "horse",           # 18 -> id 19
-    "sheep",           # 19 -> id 20
-    "cow",             # 20 -> id 21
-    "elephant",        # 21 -> id 22
-    "bear",            # 22 -> id 23
-    "zebra",           # 23 -> id 24
-    "giraffe",         # 24 -> id 25
-    "N/A",             # 25 -> id 26 (unused)
-    "backpack",        # 26 -> id 27
-    "umbrella",        # 27 -> id 28
-    "N/A",             # 28 -> id 29 (unused)
-    "N/A",             # 29 -> id 30 (unused)
-    "handbag",         # 30 -> id 31
-    "tie",             # 31 -> id 32
-    "suitcase",        # 32 -> id 33
-    "frisbee",         # 33 -> id 34
-    "skis",            # 34 -> id 35
-    "snowboard",       # 35 -> id 36
-    "sports ball",     # 36 -> id 37
-    "kite",            # 37 -> id 38
-    "baseball bat",    # 38 -> id 39
-    "baseball glove",  # 39 -> id 40
-    "skateboard",      # 40 -> id 41
-    "surfboard",       # 41 -> id 42
-    "tennis racket",   # 42 -> id 43
-    "bottle",          # 43 -> id 44
-    "N/A",             # 44 -> id 45 (unused)
-    "wine glass",      # 45 -> id 46
-    "cup",             # 46 -> id 47
-    "fork",            # 47 -> id 48
-    "knife",           # 48 -> id 49
-    "spoon",           # 49 -> id 50
-    "bowl",            # 50 -> id 51
-    "banana",          # 51 -> id 52
-    "apple",           # 52 -> id 53
-    "sandwich",        # 53 -> id 54
-    "orange",          # 54 -> id 55
-    "broccoli",        # 55 -> id 56
-    "carrot",          # 56 -> id 57
-    "hot dog",         # 57 -> id 58
-    "pizza",           # 58 -> id 59
-    "donut",           # 59 -> id 60
-    "cake",            # 60 -> id 61
-    "chair",           # 61 -> id 62
-    "couch",           # 62 -> id 63
-    "potted plant",    # 63 -> id 64
-    "bed",             # 64 -> id 65
-    "N/A",             # 65 -> id 66 (unused)
-    "dining table",    # 66 -> id 67
-    "N/A",             # 67 -> id 68 (unused)
-    "N/A",             # 68 -> id 69 (unused)
-    "toilet",          # 69 -> id 70
-    "N/A",             # 70 -> id 71 (unused)
-    "tv",              # 71 -> id 72
-    "laptop",          # 72 -> id 73
-    "mouse",           # 73 -> id 74
-    "remote",          # 74 -> id 75
-    "keyboard",        # 75 -> id 76
-    "cell phone",      # 76 -> id 77
-    "microwave",       # 77 -> id 78
-    "oven",            # 78 -> id 79
-    "toaster",         # 79 -> id 80
-    "sink",            # 80 -> id 81
-    "refrigerator",    # 81 -> id 82
-    "N/A",             # 82 -> id 83 (unused)
-    "book",            # 83 -> id 84
-    "clock",           # 84 -> id 85
-    "vase",            # 85 -> id 86
-    "scissors",        # 86 -> id 87
-    "teddy bear",      # 87 -> id 88
-    "hair drier",      # 88 -> id 89
+    "person",          # 0
+    "bicycle",         # 1
+    "car",             # 2
+    "motorcycle",      # 3
+    "airplane",        # 4
+    "bus",             # 5
+    "train",           # 6
+    "truck",           # 7
+    "boat",            # 8
+    "traffic light",   # 9
+    "fire hydrant",    # 10
+    "stop sign",       # 11
+    "parking meter",   # 12
+    "bench",           # 13
+    "bird",            # 14
+    "cat",             # 15
+    "dog",             # 16
+    "horse",           # 17
+    "sheep",           # 18
+    "cow",             # 19
+    "elephant",        # 20
+    "bear",            # 21
+    "zebra",           # 22
+    "giraffe",         # 23
+    "backpack",        # 24
+    "umbrella",        # 25
+    "handbag",         # 26
+    "tie",             # 27
+    "suitcase",        # 28
+    "frisbee",         # 29
+    "skis",            # 30
+    "snowboard",       # 31
+    "sports ball",     # 32
+    "kite",            # 33
+    "baseball bat",    # 34
+    "baseball glove",  # 35
+    "skateboard",      # 36
+    "surfboard",       # 37
+    "tennis racket",   # 38
+    "bottle",          # 39
+    "wine glass",      # 40
+    "cup",             # 41
+    "fork",            # 42
+    "knife",           # 43
+    "spoon",           # 44
+    "bowl",            # 45
+    "banana",          # 46
+    "apple",           # 47
+    "sandwich",        # 48
+    "orange",          # 49
+    "broccoli",        # 50
+    "carrot",          # 51
+    "hot dog",         # 52
+    "pizza",           # 53
+    "donut",           # 54
+    "cake",            # 55
+    "chair",           # 56
+    "couch",           # 57
+    "potted plant",    # 58
+    "bed",             # 59
+    "dining table",    # 60
+    "toilet",          # 61
+    "tv",              # 62
+    "laptop",          # 63
+    "mouse",           # 64
+    "remote",          # 65
+    "keyboard",        # 66
+    "cell phone",      # 67
+    "microwave",       # 68
+    "oven",            # 69
+    "toaster",         # 70
+    "sink",            # 71
+    "refrigerator",    # 72
+    "book",            # 73
+    "clock",           # 74
+    "vase",            # 75
+    "scissors",        # 76
+    "teddy bear",      # 77
+    "hair drier",      # 78
+    "toothbrush",      # 79
 )
 
 CLASSES = DEFAULT_CLASSES
@@ -686,20 +675,22 @@ def run_fastapi(host, port):
 # ---------------------------------------------------------------------------
 # YOLOv11l post-processing (on-chip NMS / HPP)
 #
-# The HEF runs NMS on-chip (device_pre_post_layers: nms=true, sigmoid=true,
-# hpp=true) and exposes a single output vstream. Per the Model Zoo network
-# YAML (output_shape: 80x5x100, hpp=true, nms on-chip) = (num_classes, 5, max_dets); the
-# official tf_postproc_nms transposes to (batch, num_classes, max_dets, 5)
-# and reads each row as [ymin, xmin, ymax, xmax, score], normalized to [0,1]
-# of the 320x320 letterboxed input.
+# The HEF runs NMS on-chip (HPP: nms + sigmoid on device; 640x640 input, 80
+# COCO classes, max 100 boxes per class) and exposes a single output vstream.
+# Rows are [ymin, xmin, ymax, xmax, score], normalized to [0,1] of the
+# letterboxed network input; the caller scales to input pixels and
+# un-letterboxes to the original frame.
 #
-# HailoRT may return the vstream in any of three layouts (varies by build):
-#   1. list / object array: output[0] -> per-class list of (N, 5) detections
-#      (HailoRT HAILO_NMS_BY_SCORE format).
-#   2. dense float32 (1, 80, 5, 100): transpose to (1, 80, 100, 5).
-#   3. dense float32 (1, 80, 100, 5): already per-class-per-det.
-# All reduce to iterating per_class by cls_id. The first-inference log prints
-# the raw type/shape so the layout can be verified on hardware (SOP §10).
+# HailoRT 5.1.1 (Hailo-10H) returns the raw NMS-by-class buffer as a flat
+# 1-D FLOAT32 array in COMPACT layout: per class one integer-valued
+# detection count followed by only that many (ymin, xmin, ymax, xmax, score)
+# tuples — no padding to the 100-box maximum. Fixed-stride assumptions
+# (e.g. 501 floats per class) do not hold: they misalign every class after
+# the first and silently drop most detections. _per_class_iterable also
+# keeps handlers for the layouts other HailoRT builds can expose (ragged
+# NMS-by-score object arrays, dense (1,C,5,D) / (1,C,D,5)) so the parser
+# stays portable. The first-inference log prints the raw type/shape so the
+# layout can be verified on hardware (SOP §10).
 # ---------------------------------------------------------------------------
 
 def _first_output(hailo_output):
@@ -710,10 +701,52 @@ def _first_output(hailo_output):
     return hailo_output
 
 
+NUM_CLASSES = len(DEFAULT_CLASSES)   # 80 — matches the HEF's on-chip NMS classes
+MAX_BOXES_PER_CLASS = 100            # official yolov11 HPP NMS limit
+_EMPTY_PER_CLASS = ()                # sentinel: no detections could be parsed
+
+
+def _parse_compact_nms_by_class(buf):
+    """Parse the flat HailoRT NMS-by-class buffer (Hailo-10H, HailoRT 5.1.1):
+    per class one integer-valued detection count followed by exactly that
+    many (ymin, xmin, ymax, xmax, score) rows, classes back to back with no
+    padding. The host buffer may be sized for the worst case, so parsing
+    stops at the first implausible class header — the padding tail is not
+    data. Returns a list of (N, 5) float arrays, one per parsed class, or
+    None when nothing validates."""
+    classes = []
+    offset = 0
+    n = buf.shape[0]
+    while offset < n and len(classes) < NUM_CLASSES:
+        raw = float(buf[offset])
+        if not np.isfinite(raw):
+            break
+        count = int(round(raw))
+        if count < 0 or count > MAX_BOXES_PER_CLASS:
+            break
+        end = offset + 1 + count * 5
+        if end > n:
+            break
+        if count:
+            dets = buf[offset + 1:end].reshape(count, 5)
+            # On-chip NMS rows are normalized: coordinates and sigmoid scores
+            # all fall in [0,1] (SOP §14). Values outside mean the header was
+            # misaligned padding — stop before it poisons the output.
+            if (not np.all(np.isfinite(dets))
+                    or dets.min() < -1e-3 or dets.max() > 1.0 + 1e-3):
+                break
+            classes.append(dets)
+        else:
+            classes.append(np.zeros((0, 5), dtype=buf.dtype))
+        offset = end
+    return classes if classes else None
+
+
 def _per_class_iterable(output):
     """Return an object indexable by cls_id, each yielding (N, 5) detection
     rows [ymin, xmin, ymax, xmax, score]. Handles the HailoRT NMS layouts:
-    ragged/object (NMS-by-score), dense float32 (1,C,5,D) or (1,C,D,5)."""
+    the flat compact NMS-by-class buffer (Hailo-10H, HailoRT 5.1.1),
+    ragged/object (NMS-by-score), and dense float32 (1,C,5,D) or (1,C,D,5)."""
     # Ragged (NMS-by-score): output is shape (1, num_classes) where each element
     # is a per-class (N, 5) array with N varying by class. np.asarray raises
     # ValueError on this inhomogeneous shape, so guard it and take output[0]
@@ -735,9 +768,14 @@ def _per_class_iterable(output):
         if arr.shape[1] == 5 and arr.shape[2] != 5:
             arr = np.transpose(arr, (0, 2, 1))
         return arr
-    if arr.ndim == 2:
-        # (1, num_classes) object-ish: output[0] is the per-class iterable.
-        return output[0]
+    # Flat 1-D/2-D float32: the raw HPP NMS-by-class buffer, compact packing.
+    if arr.ndim <= 2:
+        parsed = _parse_compact_nms_by_class(arr.ravel())
+        if parsed is not None:
+            return parsed
+        print(f"[YOLOv11] flat output shape {arr.shape} did not validate as "
+              f"compact NMS-by-class; no detections parsed", flush=True)
+        return _EMPTY_PER_CLASS
     # Fallback: assume output[0] is already the per-class iterable.
     return output[0]
 
@@ -746,7 +784,7 @@ def post_process_hailo(hailo_output, obj_thresh, nms_thresh, input_h, input_w):
     """Parse the on-chip NMS output into boxes/classes/scores.
 
     Returns (boxes, classes, scores) where boxes are xyxy in input-pixel space
-    (the 320x320 letterboxed input); the caller un-letterboxes to the original
+    (the letterboxed network input); the caller un-letterboxes to the original
     frame. nms_thresh is accepted for API parity but ignored (NMS is on-chip).
     """
     global _DET_OUTPUT_LOGGED
@@ -775,6 +813,51 @@ def post_process_hailo(hailo_output, obj_thresh, nms_thresh, input_h, input_w):
             f"shape={shape_str}, dtype={dtype_str}{rng_s}",
             flush=True,
         )
+        # Per-class detection dump (SOP §14): first valid rows per layout.
+        try:
+            per_class_probe = _per_class_iterable(output)
+            n_shown = 0
+            for cls_id, dets in enumerate(per_class_probe):
+                if dets is None:
+                    continue
+                d = np.asarray(dets)
+                if d.size == 0 or d.ndim == 0:
+                    continue
+                if d.ndim == 1:
+                    d = d.reshape(-1, 5)
+                valid = d[d[..., 4] > 0.1] if d.shape[-1] == 5 else d
+                if valid.shape[0]:
+                    print(f"[YOLOv11] cls{cls_id}: {valid.shape[0]} rows, "
+                          f"first={np.round(valid[0], 3).tolist()}", flush=True)
+                    n_shown += 1
+                if n_shown >= 5:
+                    break
+            if n_shown == 0:
+                # Nothing above 0.1 — dump raw rows regardless of score so
+                # the log shows whether scores are pre-sigmoid logits or
+                # normalized probabilities, and whether boxes look sane.
+                shown = 0
+                for cls_id, dets in enumerate(per_class_probe):
+                    if dets is None:
+                        continue
+                    d = np.asarray(dets)
+                    if d.size == 0 or d.ndim == 0:
+                        continue
+                    if d.ndim == 1:
+                        d = d.reshape(-1, 5)
+                    for r in range(min(2, d.shape[0])):
+                        print(f"[YOLOv11] RAW cls{cls_id}[{r}]: "
+                              f"{np.round(d[r], 4).tolist()}", flush=True)
+                        shown += 1
+                        if shown >= 8:
+                            break
+                    if shown >= 8:
+                        break
+                if shown == 0:
+                    print("[YOLOv11] every class returned empty detection "
+                          "lists from HailoRT", flush=True)
+        except Exception as exc:
+            print(f"[YOLOv11] probe error: {exc}", flush=True)
         _DET_OUTPUT_LOGGED = True
 
     boxes, classes, scores = [], [], []
@@ -805,7 +888,7 @@ def post_process_hailo(hailo_output, obj_thresh, nms_thresh, input_h, input_w):
 
 
 def unletterbox_boxes(boxes, lb_info):
-    """Map xyxy boxes from the 320x320 letterboxed input back to the original
+    """Map xyxy boxes from the letterboxed network input back to the original
     frame. `lb_info` is the (ratio, dw, dh) captured for this exact frame by
     preprocess_frame — independent of the shared co_helper list, which races
     across threads (live preview + VideoAnalyzer) per the STDC1 note."""
