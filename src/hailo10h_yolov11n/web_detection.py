@@ -738,8 +738,36 @@ def _per_class_iterable(output):
     if arr.ndim == 2:
         # (1, num_classes) object-ish: output[0] is the per-class iterable.
         return output[0]
+    if arr.ndim == 1:
+        # Flat HPP NMS-by-score packing (Hailo-10H): 80 classes x
+        # [count + 100*(ymin,xmin,ymax,xmax,score)] = 80*501 floats.
+        # Return a view indexable by cls_id -> (count, dets).
+        num_classes = arr.shape[0] // 501
+        if num_classes * 501 == arr.shape[0]:
+            return _FlatNmsByScore(arr, num_classes)
+        return output[0]
     # Fallback: assume output[0] is already the per-class iterable.
     return output[0]
+
+
+class _FlatNmsByScore:
+    """View of the flat HPP NMS-by-score buffer: per class, slot 0 is the
+    detection count followed by count*(ymin,xmin,ymax,xmax,score) tuples."""
+
+    def __init__(self, buf, num_classes):
+        self._buf = buf
+        self._n = num_classes
+
+    def __iter__(self):
+        for c in range(self._n):
+            yield self[c]
+
+    def __getitem__(self, cls_id):
+        base = cls_id * 501
+        count = int(round(float(self._buf[base])))
+        count = max(0, min(count, 100))
+        dets = self._buf[base + 1: base + 1 + count * 5].reshape(count, 5)             if count else np.zeros((0, 5), dtype=np.float32)
+        return dets
 
 
 def post_process_hailo(hailo_output, obj_thresh, nms_thresh, input_h, input_w):
@@ -795,7 +823,29 @@ def post_process_hailo(hailo_output, obj_thresh, nms_thresh, input_h, input_w):
                 if n_shown >= 5:
                     break
             if n_shown == 0:
-                print("[YOLOv11] no rows above 0.1 in any class", flush=True)
+                # Nothing above 0.1 — dump raw rows regardless of score so
+                # the log shows whether scores are pre-sigmoid logits or
+                # normalized probabilities, and whether boxes look sane.
+                shown = 0
+                for cls_id, dets in enumerate(per_class_probe):
+                    if dets is None:
+                        continue
+                    d = np.asarray(dets)
+                    if d.size == 0 or d.ndim == 0:
+                        continue
+                    if d.ndim == 1:
+                        d = d.reshape(-1, 5)
+                    for r in range(min(2, d.shape[0])):
+                        print(f"[YOLOv11] RAW cls{cls_id}[{r}]: "
+                              f"{np.round(d[r], 4).tolist()}", flush=True)
+                        shown += 1
+                        if shown >= 8:
+                            break
+                    if shown >= 8:
+                        break
+                if shown == 0:
+                    print("[YOLOv11] every class returned empty detection "
+                          "lists from HailoRT", flush=True)
         except Exception as exc:
             print(f"[YOLOv11] probe error: {exc}", flush=True)
         _DET_OUTPUT_LOGGED = True
