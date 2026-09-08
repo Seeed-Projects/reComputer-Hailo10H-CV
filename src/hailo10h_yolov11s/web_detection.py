@@ -754,9 +754,18 @@ def _per_class_iterable(output):
     try:
         arr = np.asarray(output)
     except ValueError:
-        return output[0]
+        # HailoRT 5.1.1 get_buffer() returns the per-class ragged list
+        # directly (80 arrays, without an outer batch dimension). Only
+        # unwrap when a backend explicitly adds a single batch wrapper.
+        if (isinstance(output, (list, tuple)) and len(output) == 1
+                and isinstance(output[0], (list, tuple))
+                and len(output[0]) == NUM_CLASSES):
+            return output[0]
+        return output
     if arr.dtype == object:
-        return output[0]
+        if arr.ndim >= 2 and arr.shape[0] == 1:
+            return arr[0]
+        return output
     # Dense float32.
     if arr.ndim == 4:
         # (batch, num_classes, A, B). Ensure (batch, num_classes, max_dets, 5).
