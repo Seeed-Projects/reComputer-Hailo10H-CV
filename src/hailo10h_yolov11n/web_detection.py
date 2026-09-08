@@ -775,6 +775,29 @@ def post_process_hailo(hailo_output, obj_thresh, nms_thresh, input_h, input_w):
             f"shape={shape_str}, dtype={dtype_str}{rng_s}",
             flush=True,
         )
+        # Per-class detection dump (SOP §14): first valid rows per layout.
+        try:
+            per_class_probe = _per_class_iterable(output)
+            n_shown = 0
+            for cls_id, dets in enumerate(per_class_probe):
+                if dets is None:
+                    continue
+                d = np.asarray(dets)
+                if d.size == 0 or d.ndim == 0:
+                    continue
+                if d.ndim == 1:
+                    d = d.reshape(-1, 5)
+                valid = d[d[..., 4] > 0.1] if d.shape[-1] == 5 else d
+                if valid.shape[0]:
+                    print(f"[YOLOv11] cls{cls_id}: {valid.shape[0]} rows, "
+                          f"first={np.round(valid[0], 3).tolist()}", flush=True)
+                    n_shown += 1
+                if n_shown >= 5:
+                    break
+            if n_shown == 0:
+                print("[YOLOv11] no rows above 0.1 in any class", flush=True)
+        except Exception as exc:
+            print(f"[YOLOv11] probe error: {exc}", flush=True)
         _DET_OUTPUT_LOGGED = True
 
     boxes, classes, scores = [], [], []
