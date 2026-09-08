@@ -120,7 +120,7 @@ DEFAULT_CLASSES = (
 )
 
 CLASSES = DEFAULT_CLASSES
-_DET_OUTPUT_LOGGED = False
+_DET_OUTPUT_LOGGED = True  # Disable verbose raw NMS diagnostics in production.
 
 def load_classes(path):
     global CLASSES
