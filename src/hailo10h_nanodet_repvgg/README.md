@@ -17,7 +17,7 @@ wrapper (outputs requested as FLOAT32).
 | Accelerator | Hailo-10H PCIe (`/dev/hailo0`) |
 | HailoRT host/runtime | 5.1.1 |
 | Python | 3.13, aarch64 |
-| Input | 320x320x3 (shape read from the HEF at startup) |
+| Input | 416x416x3 (shape read from the HEF at startup) |
 | Output | on-chip NMS tensor, post-NMS shape 80x5x100 |
 | Classes | 80 (COCO, 0-indexed — no labels_offset) |
 | HEF | Hailo Model Zoo v5.4.0, Hailo-10H |

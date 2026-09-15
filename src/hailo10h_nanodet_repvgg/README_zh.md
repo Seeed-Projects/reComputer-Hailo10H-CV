@@ -15,7 +15,7 @@ HailoRT 5.1.1 的 `create_infer_model` 多输出封装（输出请求 FLOAT32）
 | 加速器 | Hailo-10H PCIe（`/dev/hailo0`） |
 | 宿主机/运行时 | HailoRT 5.1.1 |
 | Python | 3.13，aarch64 |
-| 输入 | 320x320x3（尺寸在启动时从 HEF 读取） |
+| 输入 | 416x416x3（尺寸在启动时从 HEF 读取） |
 | 输出 | 片上 NMS 张量，后 NMS shape 80x5x100 |
 | 类别 | 80（COCO，0 起索引，无 labels_offset） |
 | HEF | Hailo Model Zoo v5.4.0，Hailo-10H |
