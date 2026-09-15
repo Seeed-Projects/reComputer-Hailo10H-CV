@@ -51,6 +51,7 @@ DEFAULT_CLASSES = (
 
 CLASSES = DEFAULT_CLASSES
 _DET_OUTPUT_LOGGED = False
+_CLS_RANGE_LOGGED = False
 
 def load_classes(path):
     global CLASSES
@@ -902,6 +903,7 @@ def _collect_damoyolo_heads(hailo_output):
 
 
 def _decode_damoyolo(heads, obj_thresh, nms_thresh, input_h, input_w, max_det=100):
+    global _CLS_RANGE_LOGGED
     if not heads:
         return None, None, None
 
@@ -931,11 +933,29 @@ def _decode_damoyolo(heads, obj_thresh, nms_thresh, input_h, input_w, max_det=10
         center = np.stack([cx, cy, cx, cy], axis=1)  # (N, 4) [x, y, x, y]
         boxes = center + box_dist  # (N, 4) xyxy in input pixels
 
-        # Classification: take the first num_classes channels (drop the +1),
-        # already sigmoid'd on-chip.
+        # Classification: take the first num_classes channels (drop the +1).
         cls_arr = cls.reshape(N, -1)
         if cls_arr.shape[1] > num_classes:
             cls_arr = cls_arr[:, :num_classes]
+
+        # Adaptive on-chip sigmoid fallback. The Model Zoo nanodet build
+        # applies sigmoid on-chip (cls arrives in [0,1]); some HEF builds
+        # expose raw logits (negative values or >1) instead, and comparing
+        # those directly with the confidence threshold filters out nearly
+        # every detection. Detect the encoding from the actual value range
+        # and sigmoid on the CPU only when needed. The first inference logs
+        # the range so the HEF encoding is confirmed on-device (SOP §10/§14).
+        cls_min = float(cls_arr.min())
+        cls_max = float(cls_arr.max())
+        if not _CLS_RANGE_LOGGED:
+            print(
+                f"[DAMO-YOLO] scale stride={stride}: "
+                f"cls range=[{cls_min:.3f}, {cls_max:.3f}]",
+                flush=True,
+            )
+            _CLS_RANGE_LOGGED = True
+        if cls_min < 0.0 or cls_max > 1.0:
+            cls_arr = _sigmoid(cls_arr)
 
         # Vectorized per-(cell, class) candidate selection.
         mask = cls_arr >= obj_thresh
