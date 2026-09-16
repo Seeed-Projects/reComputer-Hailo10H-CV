@@ -630,10 +630,52 @@ def _first_output(hailo_output):
     return hailo_output
 
 
+MAX_BOXES_PER_CLASS = 100  # official HPP NMS per-class cap
+
+
+def _parse_compact_nms_by_class(buf):
+    """Parse the flat HailoRT NMS-by-class buffer (Hailo-10H, HailoRT 5.1.1):
+    per class one integer-valued detection count followed by exactly that
+    many (ymin, xmin, ymax, xmax, score) rows, classes back to back with no
+    padding. The host buffer may be sized for the worst case, so parsing
+    stops at the first implausible class header — the padding tail is not
+    data. Returns a list of (N, 5) float arrays, one per parsed class, or
+    None when nothing validates."""
+    classes = []
+    offset = 0
+    n = buf.shape[0]
+    while offset < n and len(classes) < len(CLASSES):
+        raw = float(buf[offset])
+        if not np.isfinite(raw):
+            break
+        count = int(round(raw))
+        if count < 0 or count > MAX_BOXES_PER_CLASS:
+            break
+        end = offset + 1 + count * 5
+        if end > n:
+            break
+        if count:
+            dets = buf[offset + 1:end].reshape(count, 5)
+            # On-chip NMS rows are normalized: coordinates and sigmoid scores
+            # all fall in [0,1] (SOP §14). Values outside mean the header was
+            # misaligned padding — stop before it poisons the output.
+            if (not np.all(np.isfinite(dets))
+                    or dets.min() < -1e-3 or dets.max() > 1.0 + 1e-3):
+                break
+            classes.append(dets)
+        else:
+            classes.append(np.zeros((0, 5), dtype=buf.dtype))
+        offset = end
+    return classes if classes else None
+
+
+
+
 def _per_class_iterable(output):
     """Return an object indexable by cls_id, each yielding (N, 5) detection
     rows [ymin, xmin, ymax, xmax, score]. Handles the HailoRT NMS layouts:
-    ragged/object (NMS-by-score), dense float32 (1,C,5,D) or (1,C,D,5)."""
+    the flat compact NMS-by-class buffer (Hailo-10H, HailoRT 5.1.1),
+    ragged/object (NMS-by-score), and dense float32 (1,C,5,D) or (1,C,D,5)."""
     # Ragged (NMS-by-score): output is shape (1, num_classes) where each element
     # is a per-class (N, 5) array with N varying by class. np.asarray raises
     # ValueError on this inhomogeneous shape, so guard it and take output[0]
@@ -641,9 +683,18 @@ def _per_class_iterable(output):
     try:
         arr = np.asarray(output)
     except ValueError:
-        return output[0]
+        # HailoRT 5.1.1 get_buffer() returns the per-class ragged list
+        # directly (80 arrays, without an outer batch dimension). Only
+        # unwrap when a backend explicitly adds a single batch wrapper.
+        if (isinstance(output, (list, tuple)) and len(output) == 1
+                and isinstance(output[0], (list, tuple))
+                and len(output[0]) == len(CLASSES)):
+            return output[0]
+        return output
     if arr.dtype == object:
-        return output[0]
+        if arr.ndim >= 2 and arr.shape[0] == 1:
+            return arr[0]
+        return output
     # Dense float32.
     if arr.ndim == 4:
         # (batch, num_classes, A, B). Ensure (batch, num_classes, max_dets, 5).
@@ -655,9 +706,14 @@ def _per_class_iterable(output):
         if arr.shape[1] == 5 and arr.shape[2] != 5:
             arr = np.transpose(arr, (0, 2, 1))
         return arr
-    if arr.ndim == 2:
-        # (1, num_classes) object-ish: output[0] is the per-class iterable.
-        return output[0]
+    # Flat 1-D/2-D float32: the raw HPP NMS-by-class buffer, compact packing.
+    if arr.ndim <= 2:
+        parsed = _parse_compact_nms_by_class(arr.ravel())
+        if parsed is not None:
+            return parsed
+        print(f"[YOLOv11] flat output shape {arr.shape} did not validate as "
+              f"compact NMS-by-class; no detections parsed", flush=True)
+        return ()
     # Fallback: assume output[0] is already the per-class iterable.
     return output[0]
 
