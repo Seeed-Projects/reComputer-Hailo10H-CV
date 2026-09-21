@@ -48,6 +48,7 @@ on:
           - yolov5n_seg
           - yolov5s_seg
           - yolov5m_seg
+          - centerpose_regnetx_800mf
 
 permissions:
   contents: read
@@ -159,6 +160,9 @@ jobs:
           - model: yolov5m_seg
             image: yolov5m_seg
             description: YOLOv5m-seg instance segmentation
+          - model: centerpose_regnetx_800mf
+            image: centerpose_regnetx_800mf
+            description: CenterPose RegNetX-800MF multi-person pose estimation
 
     steps:
       - name: Checkout
