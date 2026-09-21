@@ -45,6 +45,9 @@ on:
           - yolov11m
           - yolov11l
           - yolov11x
+          - yolov5n_seg
+          - yolov5s_seg
+          - yolov5m_seg
 
 permissions:
   contents: read
@@ -147,6 +150,15 @@ jobs:
           - model: yolov11x
             image: yolov11x
             description: YOLOv11x COCO object detection
+          - model: yolov5n_seg
+            image: yolov5n_seg
+            description: YOLOv5n-seg instance segmentation
+          - model: yolov5s_seg
+            image: yolov5s_seg
+            description: YOLOv5s-seg instance segmentation
+          - model: yolov5m_seg
+            image: yolov5m_seg
+            description: YOLOv5m-seg instance segmentation
 
     steps:
       - name: Checkout
