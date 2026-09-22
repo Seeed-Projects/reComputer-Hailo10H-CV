@@ -173,6 +173,7 @@ jobs:
             image: centerpose_regnetx_800mf
             description: CenterPose RegNetX-800MF multi-person pose estimation
           - model: yolov8_pose
+            image: yolov8_pose
             description: YOLOv8 Pose person keypoint estimation
 
     steps:
