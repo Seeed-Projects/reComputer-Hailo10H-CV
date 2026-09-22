@@ -46,6 +46,7 @@ on:
           - yolov11l
           - yolov11x
           - centernet_resnet_v1_18_postprocess
+          - centernet_resnet_v1_50_postprocess
           - yolov5n_seg
           - yolov5s_seg
           - yolov5m_seg
@@ -155,6 +156,9 @@ jobs:
           - model: centernet_resnet_v1_18_postprocess
             image: centernet_resnet_v1_18_postprocess
             description: CenterNet (resnet_v1_18) COCO object detection
+          - model: centernet_resnet_v1_50_postprocess
+            image: centernet_resnet_v1_50_postprocess
+            description: CenterNet (resnet_v1_50) COCO object detection
           - model: yolov5n_seg
             image: yolov5n_seg
             description: YOLOv5n-seg instance segmentation
