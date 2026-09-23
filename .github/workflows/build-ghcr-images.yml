@@ -51,6 +51,8 @@ on:
           - yolov5s_seg
           - yolov5m_seg
           - centerpose_regnetx_800mf
+          - vit_pose_small
+          - vit_pose_small_bn
           - yolov8s_pose
           - yolov8m_pose
 
@@ -173,6 +175,12 @@ jobs:
           - model: centerpose_regnetx_800mf
             image: centerpose_regnetx_800mf
             description: CenterPose RegNetX-800MF multi-person pose estimation
+          - model: vit_pose_small
+            image: vit_pose_small
+            description: ViTPose-Small single-person pose estimation
+          - model: vit_pose_small_bn
+            image: vit_pose_small_bn
+            description: ViTPose-Small-BN single-person pose estimation
           - model: yolov8s_pose
             image: yolov8s_pose
             description: YOLOv8s Pose person keypoint estimation
