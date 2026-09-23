@@ -94,15 +94,11 @@ mode through the same web UI.
   `(x, y, score)` order; NMS runs host-side.
 - Values already inside `[0, 1]` are kept as probabilities, otherwise sigmoid
   is applied, so the decoder matches either compiled form.
-- The first inference logs every output tensor and the resolved head mapping
-  (`[YOLOv8 Pose] outputs: ...`, `head mapping by feature map: ...`) plus one
-  decoded sample, so the layout can be confirmed on hardware.
 
 ## Hardware acceptance checklist
 
 1. `hailortcli --version` reports 5.1.1 and `/dev/hailo0` exists.
-2. The first inference log shows the expected output name/shape and a plausible
-   sample row (box and joints inside `[0, 1]`).
+2. The startup log reports the HEF input size (`Model input size: 640x640`).
 3. The demo video shows person boxes with COCO skeletons aligned to the body.
 4. `POST /api/models/yolov8_pose/predict` returns boxes plus 17 keypoints.
 5. `model/yolov8m_pose.hef` runs with the same code path.

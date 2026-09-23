@@ -60,8 +60,6 @@ DEFAULT_CLASSES = (
 
 CLASSES = DEFAULT_CLASSES
 _DET_OUTPUT_LOGGED = True  # Disable verbose raw NMS diagnostics in production.
-_POSE_OUTPUT_LOGGED = False   # log the raw pose tensor layout once
-_POSE_SAMPLE_LOGGED = False   # log one decoded sample once
 
 def load_classes(path):
     global CLASSES
@@ -714,10 +712,8 @@ def _collect_pose_heads(hailo_output):
     keypoint tensor with ``NUM_KEYPOINTS * 3`` channels.
     """
     heads = {}
-    seen = []
     for name, tensor in _iter_output_tensors(hailo_output):
         arr = _to_hwc(tensor)
-        seen.append(f"{name}:{tuple(np.asarray(tensor).shape)}->{tuple(arr.shape)}")
         if arr.ndim != 3:
             continue
         h, w, c = arr.shape
@@ -730,7 +726,7 @@ def _collect_pose_heads(hailo_output):
             entry["kpts"] = arr.astype(np.float32)
         elif c == 1:
             entry["score"] = arr.astype(np.float32)
-    return heads, seen
+    return heads
 
 
 def _dfl_expectation(dist):
@@ -816,32 +812,14 @@ def post_process_hailo(hailo_output, obj_thresh, nms_thresh, input_h, input_w):
 
     nms_thresh is applied host-side: this HEF has no on-chip NMS.
     """
-    global _POSE_OUTPUT_LOGGED, _POSE_SAMPLE_LOGGED
-
     if hailo_output is None:
         return None, None, None, None
 
-    heads, seen = _collect_pose_heads(hailo_output)
-    if not _POSE_OUTPUT_LOGGED:
-        # Log every tensor once so the head mapping can be confirmed on
-        # hardware (SOP §14).
-        print(f"[YOLOv8 Pose] outputs: {'; '.join(seen)}", flush=True)
-        mapping = {h: sorted(v.keys()) for h, v in sorted(heads.items())}
-        print(f"[YOLOv8 Pose] head mapping by feature map: {mapping}", flush=True)
-        _POSE_OUTPUT_LOGGED = True
-
+    heads = _collect_pose_heads(hailo_output)
     if not heads:
-        print("[YOLOv8 Pose] no pose heads found in the output tensors", flush=True)
         return None, None, None, None
 
-    decoded = _decode_raw_pose(heads, obj_thresh, nms_thresh, input_h, input_w)
-    if not _POSE_SAMPLE_LOGGED and decoded[0] is not None:
-        box = decoded[0][0]
-        kpt = decoded[3][0][0] if decoded[3] is not None and len(decoded[3]) else None
-        print(f"[YOLOv8 Pose] sample box={np.round(box, 1).tolist()} "
-              f"kpt0={None if kpt is None else np.round(kpt, 3).tolist()}", flush=True)
-        _POSE_SAMPLE_LOGGED = True
-    return decoded
+    return _decode_raw_pose(heads, obj_thresh, nms_thresh, input_h, input_w)
 
 
 def unletterbox_boxes(boxes, lb_info):

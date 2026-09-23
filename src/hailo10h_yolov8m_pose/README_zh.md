@@ -88,13 +88,11 @@ curl -X POST "http://<开发板IP>:8000/api/models/yolov8_pose/predict" \
 - 解码遵循 ultralytics / Model Zoo 的姿态头语义：分数取 sigmoid，框距离做 DFL softmax，
   关键点按 `(2 * raw + grid) * stride` 解码、顺序为 `(x, y, score)`；NMS 在宿主侧执行。
 - 数值本身已在 `[0, 1]` 内时按概率处理，否则做 sigmoid，因此两种编译形式都能对上。
-- 首次推理会打印全部输出张量和解析出的 head 映射（`[YOLOv8 Pose] outputs: ...`、
-  `head mapping by feature map: ...`）以及一条解码样例，便于在实机上核对。
 
 ## 实机验收清单
 
 1. `hailortcli --version` 为 5.1.1，且 `/dev/hailo0` 存在。
-2. 首次推理日志中的输出名称、shape 和样例行符合预期（框与关键点都在 `[0, 1]`）。
+2. 启动日志会打印 HEF 输入尺寸（`Model input size: 640x640`）。
 3. 演示视频中人体框与 COCO 骨架贴合身体。
 4. `POST /api/models/yolov8_pose/predict` 能返回人体框和 17 个关键点。
 5. 换用 `model/yolov8m_pose.hef` 走同一套代码路径可正常运行。

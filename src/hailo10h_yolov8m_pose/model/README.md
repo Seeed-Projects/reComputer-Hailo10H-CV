@@ -18,8 +18,5 @@ https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/v5.4.0/hail
   feature-map scales); NMS and decoding run on the host
 - Default model used by the Docker CMD: `yolov8s_pose.hef`
 
-`../web_detection.py` implements the NMS row decoding, keypoint scaling and
-letterbox restoration, and the skeleton drawing.
-
-The exact output vstream name and row layout are printed by the first inference
-on hardware; confirm them there before trusting the preview.
+`../web_detection.py` decodes the raw heads, runs NMS on the host, restores the
+letterbox coordinates and draws the skeleton.

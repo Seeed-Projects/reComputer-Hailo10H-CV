@@ -9,11 +9,19 @@ import numpy as np
 
 EXECUTOR_PATH = Path(__file__).parents[1] / "py_utils" / "hailo_executor.py"
 
-# Mock output specs. The wrapper test only exercises binding reuse; the real
-# YOLOv8 Pose vstream names and shapes are logged by the first inference on
-# device (see README "Post-processing").
+# Output tensors as observed on the Hailo-10H HEFs (nine raw heads):
+#   20x20: conv70 bbox DFL(64), conv71 score(1), conv72 keypoints(51)
+#   40x40: conv57/58/59, 80x80: conv43/44/45
 DEFAULT_OUTPUT_SPECS = [
-    ("yolov8s_pose/yolov8s_pose_nms", [1, 100, 56]),
+    ("yolov8s_pose/conv70", [1, 20, 20, 64]),
+    ("yolov8s_pose/conv71", [1, 20, 20, 1]),
+    ("yolov8s_pose/conv72", [1, 20, 20, 51]),
+    ("yolov8s_pose/conv57", [1, 40, 40, 64]),
+    ("yolov8s_pose/conv58", [1, 40, 40, 1]),
+    ("yolov8s_pose/conv59", [1, 40, 40, 51]),
+    ("yolov8s_pose/conv43", [1, 80, 80, 64]),
+    ("yolov8s_pose/conv44", [1, 80, 80, 1]),
+    ("yolov8s_pose/conv45", [1, 80, 80, 51]),
 ]
 
 
@@ -172,7 +180,7 @@ class HailoExecutorTest(unittest.TestCase):
 
     def setUp(self):
         _VDevice.instances.clear()
-        _HEF.output_specs = [("yolov8s_pose/yolov8s_pose_nms", [1, 100, 56])]
+        _HEF.output_specs = [DEFAULT_OUTPUT_SPECS[0]]
 
     def test_configuration_and_bindings_are_reused_across_frames(self):
         infer = self.executor.HailoInfer("model/yolov8s_pose.hef")
@@ -194,27 +202,27 @@ class HailoExecutorTest(unittest.TestCase):
             configured.bindings.input_stream.buffer.shape, (1, 640, 640, 3)
         )
         self.assertEqual(
-            set(configured.output_buffers), {"yolov8s_pose/yolov8s_pose_nms"}
+            set(configured.output_buffers), {DEFAULT_OUTPUT_SPECS[0][0]}
         )
         self.assertEqual(
-            configured.output_buffers["yolov8s_pose/yolov8s_pose_nms"].shape,
-            (1, 100, 56),
+            configured.output_buffers[DEFAULT_OUTPUT_SPECS[0][0]].shape,
+            (1, 20, 20, 64),
         )
         # HailoRT 5.x dequantizes on read: the executor always requests FLOAT32
         # output buffers, never the raw on-chip quantized encoding.
         self.assertEqual(
-            configured.output_buffers["yolov8s_pose/yolov8s_pose_nms"].dtype,
+            configured.output_buffers[DEFAULT_OUTPUT_SPECS[0][0]].dtype,
             np.dtype("float32"),
         )
         self.assertIsNot(
-            first_outputs["yolov8s_pose/yolov8s_pose_nms"],
-            configured.output_buffers["yolov8s_pose/yolov8s_pose_nms"],
+            first_outputs[DEFAULT_OUTPUT_SPECS[0][0]],
+            configured.output_buffers[DEFAULT_OUTPUT_SPECS[0][0]],
         )
         np.testing.assert_array_equal(
-            first_outputs["yolov8s_pose/yolov8s_pose_nms"], 1
+            first_outputs[DEFAULT_OUTPUT_SPECS[0][0]], 1
         )
         np.testing.assert_array_equal(
-            second_outputs["yolov8s_pose/yolov8s_pose_nms"], 2
+            second_outputs[DEFAULT_OUTPUT_SPECS[0][0]], 2
         )
 
         infer.release()
