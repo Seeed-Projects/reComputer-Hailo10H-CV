@@ -1,15 +1,12 @@
-# CM5 + Hailo-10H 上的 YOLOv8 Pose
+# CM5 + Hailo-10H 上的 YOLOv8s Pose
 
 本模块在 Hailo-10H 加速器上运行单类别人体关键点估计。应用沿用本仓库 YOLO
 系列的服务模板（FastAPI、MJPEG 预览、离线视频分析、USB 摄像头），并实现
 YOLOv8 Pose 的后处理：片上 NMS 的每一行包含人体框、置信度和 17 个 COCO 关键点。
 
-内置 HEF：
-
 | 模型 | 路径 | 大小 | 说明 |
 |---|---|---:|---|
 | YOLOv8s Pose | `model/yolov8s_pose.hef` | 13,799,424 字节 | 默认，速度优先 |
-| YOLOv8m Pose | `model/yolov8m_pose.hef` | 29,335,552 字节 | 更大，通常更准也更慢 |
 
 ## 兼容性
 
@@ -31,23 +28,23 @@ YOLOv8 Pose 的后处理：片上 NMS 的每一行包含人体框、置信度和
 在仓库根目录执行：
 
 ```bash
-sudo docker build -f docker/hailo10h/yolov8_pose.dockerfile \
-  -t yolov8_pose:latest \
-  src/hailo10h_yolov8_pose
+sudo docker build -f docker/hailo10h/yolov8s_pose.dockerfile \
+  -t yolov8s_pose:latest \
+  src/hailo10h_yolov8s_pose
 ```
 
 ## 运行内置演示视频
 
 ```bash
 sudo docker run --rm \
-  --name cm5-hailo10h-yolov8-pose \
+  --name cm5-hailo10h-yolov8s-pose \
   --privileged \
   --net=host \
   -e PYTHONUNBUFFERED=1 \
   --device /dev/hailo0:/dev/hailo0 \
   -v /usr/lib/libhailort.so.5.1.1:/usr/lib/libhailort.so.5.1.1:ro \
   -v /usr/lib/libhailort.so:/usr/lib/libhailort.so:ro \
-  ghcr.io/seeed-projects/recomputer-hailo10h-cv/yolov8_pose:latest \
+  ghcr.io/seeed-projects/recomputer-hailo10h-cv/yolov8s_pose:latest \
   python web_detection.py \
     --model_path model/yolov8s_pose.hef \
     --video_path video/test.mp4
@@ -57,12 +54,6 @@ sudo docker run --rm \
 
 使用 USB 摄像头时挂载 `/dev/video0`，并把 `--video_path ...` 换成
 `--camera_id 0`。
-
-## 切换到 YOLOv8m Pose
-
-```bash
-python web_detection.py --model_path model/yolov8m_pose.hef --video_path video/test.mp4
-```
 
 ## REST API
 
@@ -109,8 +100,7 @@ curl -X POST "http://<开发板IP>:8000/api/models/yolov8_pose/predict" \
 2. 首次推理日志中的输出名称、shape 和样例行符合预期（框与关键点都在 `[0, 1]`）。
 3. 演示视频中人体框与 COCO 骨架贴合身体。
 4. `POST /api/models/yolov8_pose/predict` 能返回人体框和 17 个关键点。
-5. 换用 `model/yolov8m_pose.hef` 走同一套代码路径可正常运行。
-6. USB 摄像头模式下预览持续刷新、无残留帧。
+5. USB 摄像头模式下预览持续刷新、无残留帧。
 
 ## 测试
 

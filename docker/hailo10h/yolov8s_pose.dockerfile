@@ -1,4 +1,4 @@
-# yolov8_pose — CM5 + Hailo-10H
+# yolov8s_pose — CM5 + Hailo-10H
 FROM python:3.13-slim
 
 WORKDIR /app

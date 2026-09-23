@@ -1,4 +1,4 @@
-# YOLOv8 Pose on CM5 + Hailo-10H
+# YOLOv8s Pose on CM5 + Hailo-10H
 
 YOLOv8 Pose runs single-class person keypoint estimation on a Hailo-10H
 accelerator. The module reuses the YOLO service template of this repository
@@ -6,12 +6,9 @@ accelerator. The module reuses the YOLO service template of this repository
 YOLOv8 Pose post-processing: the on-chip NMS rows carry the person box, its
 score, and 17 COCO keypoints.
 
-Bundled HEFs:
-
 | Model | Path | Size | Notes |
 |---|---|---:|---|
-| YOLOv8s Pose | `model/yolov8s_pose.hef` | 13,799,424 bytes | Default, speed-oriented |
-| YOLOv8m Pose | `model/yolov8m_pose.hef` | 29,335,552 bytes | Larger, usually more accurate and slower |
+| YOLOv8s Pose | `model/yolov8s_pose.hef` | 13,799,424 bytes |
 
 ## Compatibility
 
@@ -33,23 +30,23 @@ HailoRT major/minor version.
 From the repository root:
 
 ```bash
-sudo docker build -f docker/hailo10h/yolov8_pose.dockerfile \
-  -t yolov8_pose:latest \
-  src/hailo10h_yolov8_pose
+sudo docker build -f docker/hailo10h/yolov8s_pose.dockerfile \
+  -t yolov8s_pose:latest \
+  src/hailo10h_yolov8s_pose
 ```
 
 ## Run the demo video
 
 ```bash
 sudo docker run --rm \
-  --name cm5-hailo10h-yolov8-pose \
+  --name cm5-hailo10h-yolov8s-pose \
   --privileged \
   --net=host \
   -e PYTHONUNBUFFERED=1 \
   --device /dev/hailo0:/dev/hailo0 \
   -v /usr/lib/libhailort.so.5.1.1:/usr/lib/libhailort.so.5.1.1:ro \
   -v /usr/lib/libhailort.so:/usr/lib/libhailort.so:ro \
-  ghcr.io/seeed-projects/recomputer-hailo10h-cv/yolov8_pose:latest \
+  ghcr.io/seeed-projects/recomputer-hailo10h-cv/yolov8s_pose:latest \
   python web_detection.py \
     --model_path model/yolov8s_pose.hef \
     --video_path video/test.mp4
@@ -59,12 +56,6 @@ Open `http://<BOARD_IP>:8000`.
 
 For a USB camera, mount `/dev/video0` and replace `--video_path ...` with
 `--camera_id 0`.
-
-## Switch to YOLOv8m Pose
-
-```bash
-python web_detection.py --model_path model/yolov8m_pose.hef --video_path video/test.mp4
-```
 
 ## REST API
 
@@ -117,8 +108,7 @@ mode through the same web UI.
    sample row (box and joints inside `[0, 1]`).
 3. The demo video shows person boxes with COCO skeletons aligned to the body.
 4. `POST /api/models/yolov8_pose/predict` returns boxes plus 17 keypoints.
-5. `model/yolov8m_pose.hef` runs with the same code path.
-6. USB camera mode keeps the preview live without stale frames.
+5. USB camera mode keeps the preview live without stale frames.
 
 ## Tests
 

@@ -51,7 +51,8 @@ on:
           - yolov5s_seg
           - yolov5m_seg
           - centerpose_regnetx_800mf
-          - yolov8_pose
+          - yolov8s_pose
+          - yolov8m_pose
 
 permissions:
   contents: read
@@ -172,9 +173,12 @@ jobs:
           - model: centerpose_regnetx_800mf
             image: centerpose_regnetx_800mf
             description: CenterPose RegNetX-800MF multi-person pose estimation
-          - model: yolov8_pose
-            image: yolov8_pose
-            description: YOLOv8 Pose person keypoint estimation
+          - model: yolov8s_pose
+            image: yolov8s_pose
+            description: YOLOv8s Pose person keypoint estimation
+          - model: yolov8m_pose
+            image: yolov8m_pose
+            description: YOLOv8m Pose person keypoint estimation
 
     steps:
       - name: Checkout
