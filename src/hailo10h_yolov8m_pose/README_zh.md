@@ -16,7 +16,7 @@ YOLOv8 Pose 的后处理：片上 NMS 的每一行包含人体框、置信度和
 | HailoRT 宿主/运行时 | 5.1.1 |
 | Python | 3.13, aarch64 |
 | 输入 | 640x640x3 RGB（letterbox、灰色填充，归一化在 HEF 内） |
-| 输出 | 人体框、置信度、17 个 COCO 关键点（片上 NMS） |
+| 输出 | 人体框、置信度、17 个 COCO 关键点（原始输出头 + 宿主 NMS） |
 | 类别 | 1（`person`） |
 | HEF | Hailo Model Zoo v5.4.0，Hailo-10H |
 
@@ -83,16 +83,13 @@ curl -X POST "http://<开发板IP>:8000/api/models/yolov8_pose/predict" \
 
 ## 后处理
 
-- HEF 在片上完成 NMS，因此 `nms_thresh` 仅保留参数接口、不参与计算。
-- 每个 NMS 行为 `[ymin, xmin, ymax, xmax, score, kpt0_y, kpt0_x, kpt0_s, ...]`，
-  共 17 个关键点、56 个数值，均为相对网络输入的归一化值。人体框和关键点先换算
-  到 640x640，再按 letterbox 参数还原到原图。
-- 缓冲区按"每类一个计数 + 若干行"的紧凑格式解析，同时兼容
-  `(1, C, N, 56)` / `(C, N, 56)` 稠密布局和 ragged 布局。若扁平缓冲区按 56 宽
-  解析失败，会用仅检测的 5 宽再试一次，保证后处理版本差异时人体框仍能解出。
-- 首次推理会打印输出类型、shape 和一行样例：
-  `[YOLOv8 Pose] raw output type=..., shape=..., dtype=..., row_width=...`。
-  可用它确认实机上的关键点顺序：解码按 `(y, x, score)` 读取，返回 `(x, y, score)`。
+- HEF 输出的是原始姿态头（没有片上 NMS）：三个特征图尺度共 9 个张量，每个尺度包含
+  bbox DFL（64 通道）、score（1）和 keypoints（51）。
+- 解码遵循 ultralytics / Model Zoo 的姿态头语义：分数取 sigmoid，框距离做 DFL softmax，
+  关键点按 `(2 * raw + grid) * stride` 解码、顺序为 `(x, y, score)`；NMS 在宿主侧执行。
+- 数值本身已在 `[0, 1]` 内时按概率处理，否则做 sigmoid，因此两种编译形式都能对上。
+- 首次推理会打印全部输出张量和解析出的 head 映射（`[YOLOv8 Pose] outputs: ...`、
+  `head mapping by feature map: ...`）以及一条解码样例，便于在实机上核对。
 
 ## 实机验收清单
 

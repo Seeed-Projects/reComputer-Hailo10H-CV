@@ -36,8 +36,7 @@ IMG_SIZE = (640, 640)  # (width, height) — overridden at runtime from the .hef
 # row, so one row is [ymin, xmin, ymax, xmax, score, kpt0_y, kpt0_x, kpt0_s, ...].
 NUM_KEYPOINTS = 17
 KEYPOINT_SCORE_THRESH = 0.30
-POSE_ROW_WIDTH = 5 + NUM_KEYPOINTS * 3   # 56
-DET_ROW_WIDTH = 5                        # detection-only rows (layout probe)
+REG_MAX = 16                             # DFL bins per box side
 
 COCO_SKELETON = (
     (5, 7), (7, 9), (6, 8), (8, 10),
@@ -61,6 +60,8 @@ DEFAULT_CLASSES = (
 
 CLASSES = DEFAULT_CLASSES
 _DET_OUTPUT_LOGGED = True  # Disable verbose raw NMS diagnostics in production.
+_POSE_OUTPUT_LOGGED = False   # log the raw pose tensor layout once
+_POSE_SAMPLE_LOGGED = False   # log one decoded sample once
 
 def load_classes(path):
     global CLASSES
@@ -632,7 +633,7 @@ def run_fastapi(host, port):
 
 
 # ---------------------------------------------------------------------------
-# YOLOv8 Pose post-processing (on-chip NMS / HPP)
+# YOLOv8 Pose post-processing (raw heads + host-side NMS)
 #
 # The HEF runs NMS on-chip (HPP: nms + sigmoid on device; 640x640 input, 80
 # COCO classes, max 100 boxes per class) and exposes a single output vstream.
@@ -660,192 +661,187 @@ def _first_output(hailo_output):
     return hailo_output
 
 
-NUM_CLASSES = len(DEFAULT_CLASSES)   # 1 — YOLOv8 Pose only detects person
-MAX_BOXES_PER_CLASS = 100            # Hailo HPP NMS per-class limit
-_EMPTY_PER_CLASS = ()                # sentinel: no detections could be parsed
+def _iter_output_tensors(hailo_output):
+    if isinstance(hailo_output, dict):
+        for name, tensor in hailo_output.items():
+            yield name, tensor
+    elif isinstance(hailo_output, (list, tuple)):
+        for idx, tensor in enumerate(hailo_output):
+            yield str(idx), tensor
+    else:
+        yield "output", hailo_output
 
 
-def _parse_compact_nms_rows(buf, row_width):
-    """Parse the flat HailoRT NMS buffer: per class one integer-valued detection
-    count followed by that many `row_width`-wide rows, classes back to back.
-    The host buffer may be sized for the worst case, so parsing stops at the
-    first implausible class header; the padding tail is not data."""
-    classes = []
-    offset = 0
-    n = buf.shape[0]
-    while offset < n and len(classes) < NUM_CLASSES:
-        raw = float(buf[offset])
-        if not np.isfinite(raw):
+def _nms(boxes, scores, iou_thresh, max_det=100):
+    if len(boxes) == 0:
+        return []
+    x1, y1, x2, y2 = boxes[:, 0], boxes[:, 1], boxes[:, 2], boxes[:, 3]
+    areas = np.maximum(0, x2 - x1) * np.maximum(0, y2 - y1)
+    order = scores.argsort()[::-1]
+    keep = []
+    while order.size > 0 and len(keep) < max_det:
+        i = order[0]
+        keep.append(i)
+        if order.size == 1:
             break
-        count = int(round(raw))
-        if count < 0 or count > MAX_BOXES_PER_CLASS:
-            break
-        end = offset + 1 + count * row_width
-        if end > n:
-            break
-        if count:
-            rows = buf[offset + 1:end].reshape(count, row_width)
-            # On-chip NMS rows are normalized (coordinates and sigmoid scores in
-            # [0,1]); anything outside means the header was misaligned padding.
-            if (not np.all(np.isfinite(rows))
-                    or rows.min() < -1e-3 or rows.max() > 1.0 + 1e-3):
-                break
-            classes.append(rows)
-        else:
-            classes.append(np.zeros((0, row_width), dtype=buf.dtype))
-        offset = end
-    return classes if classes else None
+        xx1 = np.maximum(x1[i], x1[order[1:]])
+        yy1 = np.maximum(y1[i], y1[order[1:]])
+        xx2 = np.minimum(x2[i], x2[order[1:]])
+        yy2 = np.minimum(y2[i], y2[order[1:]])
+        inter = np.maximum(0, xx2 - xx1) * np.maximum(0, yy2 - yy1)
+        union = areas[i] + areas[order[1:]] - inter
+        iou = inter / np.maximum(union, 1e-6)
+        order = order[np.where(iou <= iou_thresh)[0] + 1]
+    return keep
 
 
-def _detect_row_width(output):
-    """Return the NMS row width (56 for pose rows, 5 for detection-only)."""
-    try:
-        arr = np.asarray(output)
-    except ValueError:
-        arr = None
-    if arr is not None and arr.dtype != object and arr.ndim >= 2:
-        for dim in (arr.shape[-1], arr.shape[-2] if arr.ndim >= 2 else None):
-            if dim in (POSE_ROW_WIDTH, DET_ROW_WIDTH):
-                return int(dim)
-    return POSE_ROW_WIDTH
+def _to_hwc(tensor):
+    """Normalise a HailoRT output tensor to (H, W, C)."""
+    arr = np.asarray(tensor)
+    while arr.ndim > 3 and arr.shape[0] == 1:
+        arr = arr[0]
+    if (arr.ndim == 3 and arr.shape[0] in (1, NUM_KEYPOINTS * 3, REG_MAX * 4)
+            and arr.shape[-1] not in (1, NUM_KEYPOINTS * 3, REG_MAX * 4)):
+        arr = np.moveaxis(arr, 0, -1)   # CHW -> HWC
+    return arr
 
 
-def _per_class_iterable(output, row_width):
-    """Return an object indexable by cls_id, each yielding (N, row_width) rows.
-    Handles the HailoRT NMS layouts: compact flat buffer, ragged/object
-    (NMS-by-score), and dense float32 (1,C,A,B) or (1,C,B,A)."""
-    try:
-        arr = np.asarray(output)
-    except ValueError:
-        if (isinstance(output, (list, tuple)) and len(output) == 1
-                and isinstance(output[0], (list, tuple))
-                and len(output[0]) == NUM_CLASSES):
-            return output[0]
-        return output
-    if arr.dtype == object:
-        if arr.ndim >= 2 and arr.shape[0] == 1:
-            return arr[0]
-        return output
-    if arr.ndim == 4:
-        if arr.shape[2] == row_width and arr.shape[3] != row_width:
-            arr = np.transpose(arr, (0, 1, 3, 2))
-        return arr[0]
-    if arr.ndim == 3:
-        if arr.shape[1] == row_width and arr.shape[2] != row_width:
-            arr = np.transpose(arr, (0, 2, 1))
-        return arr
-    if arr.ndim <= 2:
-        # The flat buffer does not advertise its row width: try the expected
-        # pose width first, then the detection-only width, so a different pose
-        # post-process revision still decodes its boxes.
-        widths = [row_width]
-        widths += [w for w in (DET_ROW_WIDTH, POSE_ROW_WIDTH) if w not in widths]
-        for width in widths:
-            parsed = _parse_compact_nms_rows(arr.ravel(), width)
-            if parsed is not None:
-                if width != row_width:
-                    print(f"[YOLOv8 Pose] flat buffer parsed with row_width={width}",
-                          flush=True)
-                return parsed
-        print(f"[YOLOv8 Pose] flat output shape {arr.shape} did not validate as "
-              f"an NMS buffer of width {widths}; no detections parsed", flush=True)
-        return _EMPTY_PER_CLASS
-    return output[0]
+def _collect_pose_heads(hailo_output):
+    """Group the raw YOLOv8-pose heads by feature-map size.
+
+    The HEF exposes nine raw outputs (no on-chip NMS): per scale one bbox
+    tensor with ``REG_MAX * 4`` channels (DFL), one score tensor (1) and one
+    keypoint tensor with ``NUM_KEYPOINTS * 3`` channels.
+    """
+    heads = {}
+    seen = []
+    for name, tensor in _iter_output_tensors(hailo_output):
+        arr = _to_hwc(tensor)
+        seen.append(f"{name}:{tuple(np.asarray(tensor).shape)}->{tuple(arr.shape)}")
+        if arr.ndim != 3:
+            continue
+        h, w, c = arr.shape
+        if h != w:
+            continue
+        entry = heads.setdefault(h, {})
+        if c == REG_MAX * 4:
+            entry["bbox"] = arr.astype(np.float32)
+        elif c == NUM_KEYPOINTS * 3:
+            entry["kpts"] = arr.astype(np.float32)
+        elif c == 1:
+            entry["score"] = arr.astype(np.float32)
+    return heads, seen
+
+
+def _dfl_expectation(dist):
+    """Distribution Focal Loss: softmax over the bins, then the expectation."""
+    logits = dist.astype(np.float32)
+    logits -= logits.max(axis=-1, keepdims=True)
+    exp = np.exp(logits)
+    prob = exp / np.maximum(exp.sum(axis=-1, keepdims=True), 1e-9)
+    bins = np.arange(dist.shape[-1], dtype=np.float32)
+    return (prob * bins).sum(axis=-1)
+
+
+def _decode_raw_pose(heads, obj_thresh, nms_thresh, input_h, input_w):
+    """Decode the raw pose heads into boxes / scores / keypoints.
+
+    Boxes and keypoints are returned in the letterboxed network-input pixel
+    space; the caller un-letterboxes them.
+    """
+    boxes_all, scores_all, kpts_all = [], [], []
+
+    for feat_h in sorted(heads):
+        branch = heads[feat_h]
+        if not all(k in branch for k in ("bbox", "score", "kpts")):
+            continue
+
+        feat_h, feat_w = branch["bbox"].shape[:2]
+        stride_y = input_h / float(feat_h)
+        stride_x = input_w / float(feat_w)
+
+        scores = branch["score"].reshape(-1).astype(np.float32)
+        if scores.size and (scores.min() < 0.0 or scores.max() > 1.0):
+            scores = 1.0 / (1.0 + np.exp(-scores))
+        keep = np.where(scores >= obj_thresh)[0]
+        if keep.size == 0:
+            continue
+
+        grid_x, grid_y = np.meshgrid(np.arange(feat_w), np.arange(feat_h))
+        grid_x = grid_x.reshape(-1).astype(np.float32)
+        grid_y = grid_y.reshape(-1).astype(np.float32)
+
+        dist = branch["bbox"].reshape(feat_h, feat_w, 4, REG_MAX)
+        dist = _dfl_expectation(dist).reshape(-1, 4)
+        # distances are in grid units -> pixels
+        left = dist[:, 0] * stride_x
+        top = dist[:, 1] * stride_y
+        right = dist[:, 2] * stride_x
+        bottom = dist[:, 3] * stride_y
+        cx = (grid_x + 0.5) * stride_x
+        cy = (grid_y + 0.5) * stride_y
+        boxes = np.stack((cx - left, cy - top, cx + right, cy + bottom), axis=-1)
+
+        kpts = branch["kpts"].reshape(feat_h, feat_w, NUM_KEYPOINTS, 3)
+        kpts = kpts.reshape(-1, NUM_KEYPOINTS, 3).astype(np.float32)
+        # ultralytics pose decode: (2 * raw + grid) * stride
+        kpts[:, :, 0] = (2.0 * kpts[:, :, 0] + grid_x[:, None]) * stride_x
+        kpts[:, :, 1] = (2.0 * kpts[:, :, 1] + grid_y[:, None]) * stride_y
+        kpt_scores = kpts[:, :, 2]
+        if kpt_scores.size and (kpt_scores.min() < 0.0 or kpt_scores.max() > 1.0):
+            kpts[:, :, 2] = 1.0 / (1.0 + np.exp(-kpt_scores))
+
+        boxes_all.append(boxes[keep])
+        scores_all.append(scores[keep])
+        kpts_all.append(kpts[keep])
+
+    if not boxes_all:
+        return None, None, None, None
+
+    boxes = np.concatenate(boxes_all, axis=0)
+    scores = np.concatenate(scores_all, axis=0)
+    keypoints = np.concatenate(kpts_all, axis=0)
+
+    keep = _nms(boxes, scores, nms_thresh)
+    if not keep:
+        return None, None, None, None
+    return (boxes[keep].astype(np.float32),
+            np.zeros(len(keep), dtype=np.int32),
+            scores[keep].astype(np.float32),
+            keypoints[keep].astype(np.float32))
 
 
 def post_process_hailo(hailo_output, obj_thresh, nms_thresh, input_h, input_w):
-    """Parse the on-chip NMS output into boxes, class ids, scores and 17 COCO
-    keypoints. Rows are normalized; boxes and keypoints are scaled to the
-    letterboxed network input here and un-letterboxed by the caller.
-    nms_thresh is accepted for API parity but ignored (NMS is on-chip)."""
-    global _DET_OUTPUT_LOGGED
+    """Decode the raw YOLOv8 Pose heads into boxes, scores and 17 keypoints.
+
+    nms_thresh is applied host-side: this HEF has no on-chip NMS.
+    """
+    global _POSE_OUTPUT_LOGGED, _POSE_SAMPLE_LOGGED
 
     if hailo_output is None:
         return None, None, None, None
 
-    output = _first_output(hailo_output)
-    row_width = _detect_row_width(output)
-    per_class = _per_class_iterable(output, row_width)
+    heads, seen = _collect_pose_heads(hailo_output)
+    if not _POSE_OUTPUT_LOGGED:
+        # Log every tensor once so the head mapping can be confirmed on
+        # hardware (SOP §14).
+        print(f"[YOLOv8 Pose] outputs: {'; '.join(seen)}", flush=True)
+        mapping = {h: sorted(v.keys()) for h, v in sorted(heads.items())}
+        print(f"[YOLOv8 Pose] head mapping by feature map: {mapping}", flush=True)
+        _POSE_OUTPUT_LOGGED = True
 
-    if not _DET_OUTPUT_LOGGED:
-        # SOP §14: log the raw layout once so the pose row ordering (y, x) can be
-        # confirmed on hardware from the first inference, plus a sample row.
-        try:
-            raw = np.asarray(output)
-            shape_str, dtype_str = str(raw.shape), str(raw.dtype)
-        except ValueError:
-            shape_str, dtype_str = "ragged (NMS-by-score)", "object"
-        print(
-            f"[YOLOv8 Pose] raw output type={type(output).__name__}, "
-            f"shape={shape_str}, dtype={dtype_str}, row_width={row_width}",
-            flush=True,
-        )
-        shown = 0
-        for cls_id, rows in enumerate(per_class):
-            if rows is None:
-                continue
-            arr = np.asarray(rows)
-            if arr.size == 0 or arr.ndim == 0:
-                continue
-            if arr.ndim == 1:
-                arr = arr.reshape(-1, row_width)
-            if arr.shape[-1] != row_width:
-                continue
-            for row in arr[:2]:
-                if float(row[4]) > 0.05:
-                    print(f"[YOLOv8 Pose] cls{cls_id} row="
-                          f"{np.round(row[:5], 3).tolist()} "
-                          f"kpt0={np.round(row[5:8], 3).tolist()}", flush=True)
-                    shown += 1
-            if shown >= 3:
-                break
-        if shown == 0:
-            print("[YOLOv8 Pose] no row above 0.05 in the first NMS probe",
-                  flush=True)
-        _DET_OUTPUT_LOGGED = True
-
-    boxes, classes, scores, keypoints = [], [], [], []
-    for cls_id, rows in enumerate(per_class):
-        if rows is None:
-            continue
-        rows = np.asarray(rows)
-        if rows.size == 0 or rows.ndim == 0:
-            continue
-        if rows.ndim == 1:
-            rows = rows.reshape(-1, row_width)
-        if rows.shape[-1] < 5:
-            continue
-        has_kpts = rows.shape[-1] >= 5 + NUM_KEYPOINTS * 3
-        for row in rows:
-            score = float(row[4])
-            if score < obj_thresh:
-                continue
-            ymin, xmin, ymax, xmax = (float(row[0]), float(row[1]),
-                                      float(row[2]), float(row[3]))
-            boxes.append([xmin * input_w, ymin * input_h,
-                          xmax * input_w, ymax * input_h])
-            classes.append(int(cls_id))
-            scores.append(score)
-            if has_kpts:
-                kp = np.asarray(row[5:5 + NUM_KEYPOINTS * 3],
-                                dtype=np.float32).reshape(NUM_KEYPOINTS, 3)
-                pts = np.empty((NUM_KEYPOINTS, 3), dtype=np.float32)
-                # The NMS row stores joints as (y, x, score), matching the
-                # ymin/xmin ordering of the box columns.
-                pts[:, 0] = kp[:, 1] * input_w
-                pts[:, 1] = kp[:, 0] * input_h
-                pts[:, 2] = kp[:, 2]
-                keypoints.append(pts)
-            else:
-                keypoints.append(np.full((NUM_KEYPOINTS, 3), np.nan,
-                                         dtype=np.float32))
-
-    if not boxes:
+    if not heads:
+        print("[YOLOv8 Pose] no pose heads found in the output tensors", flush=True)
         return None, None, None, None
-    return (np.asarray(boxes, dtype=np.float32),
-            np.asarray(classes, dtype=np.int32),
-            np.asarray(scores, dtype=np.float32),
-            np.asarray(keypoints, dtype=np.float32))
+
+    decoded = _decode_raw_pose(heads, obj_thresh, nms_thresh, input_h, input_w)
+    if not _POSE_SAMPLE_LOGGED and decoded[0] is not None:
+        box = decoded[0][0]
+        kpt = decoded[3][0][0] if decoded[3] is not None and len(decoded[3]) else None
+        print(f"[YOLOv8 Pose] sample box={np.round(box, 1).tolist()} "
+              f"kpt0={None if kpt is None else np.round(kpt, 3).tolist()}", flush=True)
+        _POSE_SAMPLE_LOGGED = True
+    return decoded
 
 
 def unletterbox_boxes(boxes, lb_info):

@@ -14,8 +14,8 @@ https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/v5.4.0/hail
 
 - Hardware architecture: Hailo-10H (not Hailo-8 or Hailo-8L)
 - Input: `yolov8s_pose/input_layer1`, 640x640x3, normalization compiled in-net
-- Output: single on-chip NMS vstream; each row carries the person box, its score
-  and 17 COCO keypoints (56 values per row)
+- Output: nine raw tensors (bbox DFL 64 / score 1 / keypoints 51 at three
+  feature-map scales); NMS and decoding run on the host
 - Model used by the Docker CMD: `yolov8s_pose.hef`
 
 `../web_detection.py` implements the NMS row decoding, keypoint scaling and

@@ -18,7 +18,7 @@ score, and 17 COCO keypoints.
 | HailoRT host/runtime | 5.1.1 |
 | Python | 3.13, aarch64 |
 | Input | 640x640x3 RGB (letterbox, gray padding, normalization in the HEF) |
-| Output | Person box, score, 17 COCO keypoints (on-chip NMS) |
+| Output | Person box, score, 17 COCO keypoints (raw heads + host NMS) |
 | Classes | 1 (`person`) |
 | HEF | Hailo Model Zoo v5.4.0, Hailo-10H |
 
@@ -86,20 +86,17 @@ mode through the same web UI.
 
 ## Post-processing
 
-- The HEF performs NMS on-chip, so `nms_thresh` is accepted but ignored.
-- Each NMS row is `[ymin, xmin, ymax, xmax, score, kpt0_y, kpt0_x, kpt0_s, ...]`
-  with 17 joints, i.e. 56 values per row, all normalized to the network input.
-  Boxes and keypoints are scaled to `640x640` first and then un-letterboxed
-  back to the original frame.
-- The buffer is parsed in the compact per-class form (count followed by rows),
-  and the dense `(1, C, N, 56)` / `(C, N, 56)` and ragged layouts are handled
-  too. A flat buffer that does not validate as 56-wide rows is retried with the
-  detection-only width (5) so a different post-process revision still decodes
-  boxes.
-- The first inference logs the raw output type, shape and a sample row:
-  `[YOLOv8 Pose] raw output type=..., shape=..., dtype=..., row_width=...`.
-  Use it to confirm the joint ordering on hardware: the decoder reads joints as
-  `(y, x, score)` and returns `(x, y, score)`.
+- The HEF exposes the raw pose heads (there is no on-chip NMS): nine tensors
+  at three feature-map scales, each scale carrying bbox DFL (64 channels),
+  score (1) and keypoints (51).
+- Decoding follows the ultralytics / Model Zoo pose head: sigmoid scores, DFL
+  softmax for the box distances, keypoints as `(2 * raw + grid) * stride` in
+  `(x, y, score)` order; NMS runs host-side.
+- Values already inside `[0, 1]` are kept as probabilities, otherwise sigmoid
+  is applied, so the decoder matches either compiled form.
+- The first inference logs every output tensor and the resolved head mapping
+  (`[YOLOv8 Pose] outputs: ...`, `head mapping by feature map: ...`) plus one
+  decoded sample, so the layout can be confirmed on hardware.
 
 ## Hardware acceptance checklist
 

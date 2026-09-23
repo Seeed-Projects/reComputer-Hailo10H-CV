@@ -1,8 +1,9 @@
-"""Regression tests for the YOLOv8 Pose NMS decoding (no device required).
+"""Regression tests for the raw YOLOv8-pose head decoding (no device needed).
 
-The row layout asserted here (5 box/score columns + 17 x [y, x, score]) is the
-Hailo Model Zoo pose post-process contract; the first inference on hardware
-prints a sample row so it can be confirmed on the real HEF.
+The Hailo-10H pose HEFs expose nine raw tensors, so these tests build synthetic
+heads for one feature-map scale and check the decoded geometry:
+  box  : DFL distances around the cell centre
+  kpts : (x, y) grid offsets around the cell centre
 """
 import sys
 import unittest
@@ -20,87 +21,100 @@ except Exception as exc:  # pragma: no cover - depends on the host toolchain
     wd = None
     IMPORT_ERROR = exc
 
+GRID = 20          # feature-map size of the coarsest scale
+INPUT = 640        # network input size -> stride 32
+CELL = (5, 5)      # (row, col) of the single detection
+STRIDE = INPUT / GRID
 
-def build_row(score=0.9, box=(0.1, 0.2, 0.5, 0.6)):
-    """One 56-wide NMS row: box, score, then 17 joints as (y, x, score)."""
-    row = [box[0], box[1], box[2], box[3], score]
-    joints = []
-    for idx in range(17):
-        joints.extend([0.30 + 0.01 * idx, 0.40 + 0.01 * idx, 0.80])
-    return np.asarray(row + joints, dtype=np.float32)
+
+def build_heads(score=0.9, dfl_bin=1, kpt_xy=(0.5, 0.25), kpt_score=0.0,
+                reg_max=16, num_kpts=17, grid=GRID):
+    """One scale worth of raw heads with a single active cell."""
+    row, col = CELL[0] % grid, CELL[1] % grid
+    bbox = np.zeros((grid, grid, reg_max * 4), dtype=np.float32)
+    # all four sides: put the mass on `dfl_bin` -> expectation == dfl_bin
+    for side in range(4):
+        bbox[row, col, side * reg_max + dfl_bin] = 20.0
+    scores = np.zeros((grid, grid, 1), dtype=np.float32)
+    scores[row, col, 0] = score
+    kpts = np.zeros((grid, grid, num_kpts * 3), dtype=np.float32)
+    for j in range(num_kpts):
+        kpts[row, col, j * 3 + 0] = kpt_xy[0]
+        kpts[row, col, j * 3 + 1] = kpt_xy[1]
+        kpts[row, col, j * 3 + 2] = kpt_score
+    return {"bbox": bbox, "score": scores, "kpts": kpts}
 
 
 @unittest.skipIf(wd is None, "web_detection needs opencv/fastapi: %s" % IMPORT_ERROR)
-class PosePostprocessTest(unittest.TestCase):
-    INPUT = 640
+class PoseRawDecodeTest(unittest.TestCase):
+    def decode(self, heads, thresh=0.25):
+        return wd.post_process_hailo(heads, thresh, 0.45, INPUT, INPUT)
 
-    def test_compact_nms_buffer_decodes_box_and_keypoints(self):
-        row = build_row()
-        buf = np.concatenate(([1.0], row)).astype(np.float32)
-
-        boxes, classes, scores, keypoints = wd.post_process_hailo(
-            {"yolov8s_pose/yolov8s_pose_nms": buf},
-            0.25, 0.45, self.INPUT, self.INPUT)
-
-        self.assertIsNotNone(boxes)
-        np.testing.assert_allclose(boxes[0], [128, 64, 384, 320], atol=1e-4)
-        self.assertEqual(int(classes[0]), 0)
-        self.assertAlmostEqual(float(scores[0]), 0.9, places=5)
-        self.assertEqual(keypoints.shape, (1, 17, 3))
-        # Row stores joints as (y, x, score); decoding returns (x, y, score).
-        self.assertAlmostEqual(float(keypoints[0, 0, 0]), 0.40 * self.INPUT, places=3)
-        self.assertAlmostEqual(float(keypoints[0, 0, 1]), 0.30 * self.INPUT, places=3)
-        self.assertAlmostEqual(float(keypoints[0, 16 - 1, 0]), 0.55 * self.INPUT, places=3)
-        self.assertTrue(np.all(np.isfinite(keypoints[0])))
-
-    def test_dense_layout_is_transposed_into_rows(self):
-        row = build_row()
-        dense = np.zeros((1, 1, 100, 56), dtype=np.float32)
-        dense[0, 0, 0] = row
-
-        boxes, classes, scores, keypoints = wd.post_process_hailo(
-            {"out": dense}, 0.25, 0.45, self.INPUT, self.INPUT)
+    def test_box_and_keypoints_geometry(self):
+        heads = build_heads(kpt_score=2.0)   # logits -> sigmoid
+        boxes, classes, scores, keypoints = self.decode(heads)
 
         self.assertIsNotNone(boxes)
         self.assertEqual(len(boxes), 1)
-        np.testing.assert_allclose(boxes[0], [128, 64, 384, 320], atol=1e-4)
+        self.assertEqual(int(classes[0]), 0)
+        self.assertAlmostEqual(float(scores[0]), 0.9, places=5)
+
+        cx = (CELL[1] + 0.5) * STRIDE
+        cy = (CELL[0] + 0.5) * STRIDE
+        d = 1 * STRIDE                     # dfl_bin 1 -> distance 1 grid unit
+        np.testing.assert_allclose(boxes[0],
+                                   [cx - d, cy - d, cx + d, cy + d], atol=1e-3)
+
         self.assertEqual(keypoints.shape, (1, 17, 3))
+        # kpts are (x, y): x from column 0, y from column 1
+        self.assertAlmostEqual(float(keypoints[0, 0, 0]), (2 * 0.5 + CELL[1]) * STRIDE, places=3)
+        self.assertAlmostEqual(float(keypoints[0, 0, 1]), (2 * 0.25 + CELL[0]) * STRIDE, places=3)
+        self.assertAlmostEqual(float(keypoints[0, 0, 2]), 1.0 / (1.0 + np.exp(-2.0)), places=5)
+        self.assertTrue(np.all(np.isfinite(keypoints[0])))
 
-    def test_score_threshold_filters_rows(self):
-        low = build_row(score=0.10)
-        buf = np.concatenate(([1.0], low)).astype(np.float32)
+    def test_keypoint_scores_already_in_range_are_kept(self):
+        heads = build_heads(kpt_score=0.7)   # already a probability
+        boxes, _, _, keypoints = self.decode(heads)
+        self.assertIsNotNone(boxes)
+        self.assertAlmostEqual(float(keypoints[0, 0, 2]), 0.7, places=5)
 
-        boxes, classes, scores, keypoints = wd.post_process_hailo(
-            {"out": buf}, 0.25, 0.45, self.INPUT, self.INPUT)
-
+    def test_score_threshold_drops_everything(self):
+        heads = build_heads(score=0.10)
+        boxes, classes, scores, keypoints = self.decode(heads, thresh=0.25)
         self.assertIsNone(boxes)
-        self.assertIsNone(classes)
-        self.assertIsNone(scores)
         self.assertIsNone(keypoints)
 
-    def test_detection_only_rows_yield_nan_keypoints(self):
-        row = np.asarray([0.1, 0.2, 0.5, 0.6, 0.9], dtype=np.float32)
-        buf = np.concatenate(([1.0], row)).astype(np.float32)
-
-        boxes, _, _, keypoints = wd.post_process_hailo(
-            {"out": buf}, 0.25, 0.45, self.INPUT, self.INPUT)
-
+    def test_sigmoid_scores_are_converted(self):
+        heads = build_heads(score=2.0)     # logit outside [0,1]
+        boxes, _, scores, _ = self.decode(heads)
         self.assertIsNotNone(boxes)
-        self.assertEqual(keypoints.shape, (1, 17, 3))
-        self.assertTrue(np.all(np.isnan(keypoints[0])))
+        self.assertAlmostEqual(float(scores[0]), 1.0 / (1.0 + np.exp(-2.0)), places=5)
+
+    def test_multiple_scales_are_merged(self):
+        # HailoRT returns a flat name -> tensor mapping, which is what the
+        # decoder groups by feature-map size.
+        heads = {}
+        for grid in (20, 40, 80):
+            for key, arr in build_heads(grid=grid).items():
+                heads["%s_%d" % (key, grid)] = arr
+        boxes, _, scores, keypoints = self.decode(heads)
+        self.assertIsNotNone(boxes)
+        # the same cell lights up at three scales; NMS may keep one or more
+        self.assertGreaterEqual(len(boxes), 1)
+        self.assertEqual(keypoints.shape[1:], (17, 3))
+        self.assertTrue(np.all(np.isfinite(boxes)))
 
     def test_unletterbox_keypoints_maps_back_to_frame(self):
         keypoints = np.zeros((1, 17, 3), dtype=np.float32)
         keypoints[0, :, 0] = 100.0
         keypoints[0, :, 1] = 50.0
-        # ratio 0.5, padding (10, 20): x=(100-10)/0.5=180, y=(50-20)/0.5=60
         out = wd.unletterbox_keypoints(keypoints, (0.5, 10.0, 20.0))
         np.testing.assert_allclose(out[0, :, 0], 180.0, atol=1e-3)
         np.testing.assert_allclose(out[0, :, 1], 60.0, atol=1e-3)
 
     def test_pose_constants(self):
         self.assertEqual(wd.NUM_KEYPOINTS, 17)
-        self.assertEqual(wd.POSE_ROW_WIDTH, 56)
+        self.assertEqual(wd.REG_MAX, 16)
         self.assertEqual(wd.DEFAULT_CLASSES, ("person",))
         self.assertEqual(len(wd.COCO_SKELETON), 18)
 
