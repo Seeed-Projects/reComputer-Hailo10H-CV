@@ -53,6 +53,9 @@ on:
           - centerpose_regnetx_800mf
           - vit_pose_small
           - vit_pose_small_bn
+          - yolox_tiny
+          - yolox_s_leaky
+          - yolox_l_leaky
           - yolov8s_pose
           - yolov8m_pose
 
@@ -181,6 +184,15 @@ jobs:
           - model: vit_pose_small_bn
             image: vit_pose_small_bn
             description: ViTPose-Small-BN single-person pose estimation
+          - model: yolox_tiny
+            image: yolox_tiny
+            description: YOLOX-Tiny COCO object detection
+          - model: yolox_s_leaky
+            image: yolox_s_leaky
+            description: YOLOX-S-Leaky COCO object detection
+          - model: yolox_l_leaky
+            image: yolox_l_leaky
+            description: YOLOX-L-Leaky COCO object detection
           - model: yolov8s_pose
             image: yolov8s_pose
             description: YOLOv8s Pose person keypoint estimation
