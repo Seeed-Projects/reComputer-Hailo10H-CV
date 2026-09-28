@@ -56,6 +56,9 @@ on:
           - yolox_tiny
           - yolox_s_leaky
           - yolox_l_leaky
+          - efficientdet_lite0
+          - efficientdet_lite1
+          - efficientdet_lite2
           - yolov8s_pose
           - yolov8m_pose
 
@@ -193,6 +196,15 @@ jobs:
           - model: yolox_l_leaky
             image: yolox_l_leaky
             description: YOLOX-L-Leaky COCO object detection
+          - model: efficientdet_lite0
+            image: efficientdet_lite0
+            description: EfficientDet-Lite0 COCO object detection
+          - model: efficientdet_lite1
+            image: efficientdet_lite1
+            description: EfficientDet-Lite1 COCO object detection
+          - model: efficientdet_lite2
+            image: efficientdet_lite2
+            description: EfficientDet-Lite2 COCO object detection
           - model: yolov8s_pose
             image: yolov8s_pose
             description: YOLOv8s Pose person keypoint estimation
