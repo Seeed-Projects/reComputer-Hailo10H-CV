@@ -61,6 +61,8 @@ on:
           - efficientdet_lite2
           - yolov8s_pose
           - yolov8m_pose
+          - yolov5s
+          - yolov5m
 
 permissions:
   contents: read
@@ -211,6 +213,12 @@ jobs:
           - model: yolov8m_pose
             image: yolov8m_pose
             description: YOLOv8m Pose person keypoint estimation
+          - model: yolov5s
+            image: yolov5s
+            description: YOLOv5s COCO object detection
+          - model: yolov5m
+            image: yolov5m
+            description: YOLOv5m COCO object detection
 
     steps:
       - name: Checkout
