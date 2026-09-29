@@ -826,7 +826,10 @@ def _classify_heads(endnodes):
         h, w, c = arr.shape
         if h == _Y26_PROTO and c == 32:
             proto = arr
-        elif c == 64:
+        elif c in (4, 64):
+            # 4 channels: regression_length=1 (l, t / r, b distances in stride
+            # units) — the layout the Hailo-10H yolo26_seg HEFs expose on
+            # device. 64 channels: the DFL 4x16 layout of other compiles.
             bboxes.append(arr)
         elif c == 80:
             scores.append(arr)
@@ -843,17 +846,27 @@ def _classify_heads(endnodes):
 
 
 def _decode_yolo26_boxes(bbox_head, stride):
-    """One2one distance decode (port of _yolo6_decode + DFL softmax).
+    """One2one box decode (port of the zoo `_yolo6_decode`, base/yolo26_seg.yaml).
 
-    bbox_head: (F, F, 64) raw; returns xyxy in input pixels, shape
-    (F*F, 4) with row-major grid order (y-major, x-minor).
+    bbox_head: (F, F, C). The Hailo-10H yolo26_seg HEFs expose C == 4
+    (regression_length=1): channels 0..1 are the distances from the cell centre
+    to the top-left corner (l, t) and channels 2..3 to the bottom-right corner
+    (r, b), both in stride units. C == 64 is the DFL 4x16 layout of other
+    compiles and goes through a softmax expectation first.
+    Returns xyxy in input pixels, shape (F*F, 4) with row-major grid order
+    (y-major, x-minor).
     """
-    fh, fw, _ = bbox_head.shape
-    # DFL: softmax over 16 bins, expectation -> distance in stride units.
-    d = bbox_head.reshape(fh, fw, 4, _Y26_REG_BINS)
-    d = _softmax_last(d)                      # (F, F, 4, 16)
-    bins = np.arange(_Y26_REG_BINS, dtype=np.float32)
-    dist = d @ bins                           # (F, F, 4) stride units
+    fh, fw, c = bbox_head.shape
+    if c == 4 * _Y26_REG_BINS:
+        # DFL: softmax over 16 bins, expectation -> distance in stride units.
+        d = bbox_head.reshape(fh, fw, 4, _Y26_REG_BINS)
+        d = _softmax_last(d)                      # (F, F, 4, 16)
+        bins = np.arange(_Y26_REG_BINS, dtype=np.float32)
+        dist = d @ bins                           # (F, F, 4) stride units
+    elif c == 4:
+        dist = bbox_head.astype(np.float32)
+    else:
+        raise ValueError(f"unsupported box head channels: {c}")
 
     # Grid offsets: cell center in stride units (broadcast-safe: keep (F, F)).
     gx, gy = np.meshgrid(np.arange(fw), np.arange(fh))  # (F, F)
@@ -1059,13 +1072,17 @@ def preprocess_frame(frame, co_helper):
     """Letterbox + BGR to RGB. Returns (img, lb_info) where lb_info captures the
     exact ratio + padding used for this frame so the mask can be un-letterboxed
     independent of any shared co_helper state (the helper appends to its own
-    list across threads, so relying on its last entry is racy)."""
+    list across threads, so relying on its last entry is racy).
+
+    The HEF bakes normalize_in_net (mean 0 / std 255) and padding_color=114
+    (base/yolo.yaml), so the app letterboxes with gray (114) and feeds raw
+    uint8 RGB pixels — no manual normalization."""
     if getattr(co_helper, "letter_box_info_list", None) is not None:
         co_helper.letter_box_info_list.clear()
     img, ratio, (dw, dh) = co_helper.letter_box(
         im=frame.copy(),
         new_shape=(IMG_SIZE[1], IMG_SIZE[0]),
-        pad_color=(0, 0, 0),
+        pad_color=(114, 114, 114),
         info_need=True,
     )
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)

@@ -8,7 +8,7 @@ YOLO26n-seg（2.7M 参数），Hailo-10H 平台。
 |------|-----|
 | 架构 | YOLO26n-seg |
 | 输入 | 640×640×3 RGB |
-| HEF 输出 | 边界框 + 实例掩码张量 (COCO 80类) |
+| HEF 输出 | 10 个原始张量：每个 stride 的 4 通道框（l,t / r,b 距离）、80 通道类别 logits、32 通道掩码系数，另加 160x160x32 原型 |
 | 参数量 | 2.7M |
 | 格式 | HEF (Hailo-10H) |
 
@@ -34,8 +34,14 @@ sudo docker run --rm --privileged --net=host \
 | `/api/video_feed` | GET | MJPEG 视频流 |
 | `/api/models/yolo26n_seg/predict` | POST | 框级检测结果 (JSON) |
 
-当前 Web 后处理仅输出框级检测结果；实例掩码解码仍需在目标硬件上验证。
+HEF 输出的是原始头（无片上 NMS）：宿主侧执行 sigmoid、one2one 头的两段式 top-k（post_nms_topk=100，不做 NMS）、regression_length=1 的框解码，以及掩码合成（系数 × 原型，再按框裁剪）。
 
 ## 来源
 
-HEF 模型来自 [Hailo Model Zoo](https://github.com/hailo-ai/hailo_model_zoo)。
+HEF 模型来自 [Hailo Model Zoo](https://github.com/hailo-ai/hailo_model_zoo) v5.4.0（Hailo-10H）：
+
+```text
+https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/v5.4.0/hailo10h/yolo26n_seg.hef
+```
+
+大小：6,291,456 字节 · SHA-256：`473459b812740e23bbd64a08e25f2039a14228c57f0dc3ff19086565ec70bd81`

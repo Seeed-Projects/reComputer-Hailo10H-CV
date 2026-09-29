@@ -8,7 +8,7 @@ YOLO26n-seg (2.7M params) on Hailo-10H.
 |----------|-------|
 | Architecture | YOLO26n-seg |
 | Input | 640×640×3 RGB |
-| HEF output | Bounding boxes + instance-mask tensors (COCO 80 classes) |
+| HEF output | 10 raw tensors: 4-ch box (l,t / r,b distances), 80-ch class logits and 32-ch mask coefficients per stride, plus a 160x160x32 prototype |
 | Parameters | 2.7M |
 | Format | HEF (Hailo-10H) |
 
@@ -34,8 +34,14 @@ sudo docker run --rm --privileged --net=host \
 | `/api/video_feed` | GET | MJPEG stream |
 | `/api/models/yolo26n_seg/predict` | POST | Box-level detections (JSON) |
 
-The current Web postprocessor exposes box-level detections. Instance-mask decoding still needs to be validated on the target hardware.
+The HEF exposes raw heads (no on-chip NMS): the host applies sigmoid, the two-stage top-k of the one2one head (post_nms_topk=100, no NMS), the regression_length=1 box decode and mask assembly (coefficients x prototype, cropped to each box).
 
 ## Source
 
-HEF from [Hailo Model Zoo](https://github.com/hailo-ai/hailo_model_zoo).
+HEF from [Hailo Model Zoo](https://github.com/hailo-ai/hailo_model_zoo) v5.4.0 (Hailo-10H):
+
+```text
+https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/v5.4.0/hailo10h/yolo26n_seg.hef
+```
+
+Size: 6,291,456 bytes - SHA-256: `473459b812740e23bbd64a08e25f2039a14228c57f0dc3ff19086565ec70bd81`
