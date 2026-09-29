@@ -86,6 +86,23 @@ class Yolo26SegDecodeTest(unittest.TestCase):
         self.assertIsNone(classes)
         self.assertIsNone(masks)
 
+
+    def test_draw_boxes_composites_masks_without_shape_error(self):
+        """Regression: a (N, h, w) boolean mask must not index the (h, w) frame."""
+        image = np.zeros((64, 48, 3), np.uint8)
+        masks = np.zeros((2, 64, 48), np.float32)
+        masks[0, 10:20, 10:20] = 0.9
+        masks[1, 30:40, 20:30] = 0.9
+        boxes = np.array([[10, 10, 20, 20], [20, 30, 30, 40]], np.float32)
+        scores = np.array([0.9, 0.8], np.float32)
+        classes = np.array([0, 2], np.int32)
+
+        wd.draw_boxes(image, boxes, scores, classes, masks, None)
+
+        self.assertGreater(int(image[10:20, 10:20].sum()), 0)
+        self.assertGreater(int(image[30:40, 20:30].sum()), 0)
+        self.assertEqual(int(image[0:5, 0:5].sum()), 0)
+
     def test_coco_class_list(self):
         self.assertEqual(wd.COCO_CLASSES[0], "person")
         self.assertEqual(len(wd.COCO_CLASSES), CLASSES)

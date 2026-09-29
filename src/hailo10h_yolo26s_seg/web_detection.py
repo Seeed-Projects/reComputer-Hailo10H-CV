@@ -1052,12 +1052,18 @@ def draw_boxes(image, boxes, scores, class_ids, masks=None, lb_info=None,
         binary = frame_masks > mask_thresh
         overlay = image.copy()
         for i, cl in enumerate(class_ids):
+            if i >= len(binary):
+                break
             color = _mask_color(cl)
-            overlay[binary[i]] = (
-                (overlay[binary[i]].astype(np.float32) * (1 - mask_alpha)
+            m = binary[i]
+            overlay[m] = (
+                (overlay[m].astype(np.float32) * (1 - mask_alpha)
                  + np.array(color, dtype=np.float32) * mask_alpha)
             ).astype(np.uint8)
-        image[binary] = overlay[binary]
+        # Composite every instance once: `binary` is (N, h, w) and cannot index
+        # the (h, w) frame directly.
+        any_mask = binary.any(axis=0)
+        image[any_mask] = overlay[any_mask]
     for i, box in enumerate(boxes):
         x1, y1, x2, y2 = box.astype(int)
         cl = int(class_ids[i]) % len(COCO_CLASSES)
