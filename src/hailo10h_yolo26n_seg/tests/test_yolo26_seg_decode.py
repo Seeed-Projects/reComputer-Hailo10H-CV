@@ -120,6 +120,26 @@ class Yolo26SegDecodeTest(unittest.TestCase):
         self.assertEqual(int(classes[0]), HOT_CLASS)
         self.assertAlmostEqual(float(scores[0]), 0.9, places=5)
 
+
+    def test_boxes_and_masks_unletterbox_consistently(self):
+        """Boxes are drawn after unletterbox_boxes, masks inside draw_boxes.
+        Both must map the same input-space region onto the same frame region:
+        640x640 input, 1280x720 frame -> ratio 0.5, dh 140.0, dw 0.0."""
+        lb = (0.5, 0.0, 140.0)
+        box = np.array([[100.0, 200.0, 300.0, 400.0]], np.float32)
+        real = wd.unletterbox_boxes(box, lb)
+        np.testing.assert_allclose(real, [[200.0, 120.0, 600.0, 520.0]], atol=1e-3)
+
+        masks = np.zeros((1, 640, 640), np.float32)
+        masks[0, 200:400, 100:300] = 1.0
+        frame_masks = wd.unletterbox_masks(masks, lb, (720, 1280, 3))
+        self.assertEqual(frame_masks.shape, (1, 720, 1280))
+        ys, xs = np.where(frame_masks[0] > 0.5)
+        self.assertLessEqual(abs(int(ys.min()) - 120), 3)
+        self.assertLessEqual(abs(int(xs.min()) - 200), 3)
+        self.assertLessEqual(abs(int(ys.max()) - 519), 5)
+        self.assertLessEqual(abs(int(xs.max()) - 599), 5)
+
     def test_coco_class_list(self):
         self.assertEqual(wd.COCO_CLASSES[0], "person")
         self.assertEqual(len(wd.COCO_CLASSES), CLASSES)
