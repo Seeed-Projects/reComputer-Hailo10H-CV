@@ -63,6 +63,7 @@ on:
           - yolov8m_pose
           - yolov5s
           - yolov5m
+          - yolov6n
 
 permissions:
   contents: read
@@ -219,6 +220,9 @@ jobs:
           - model: yolov5m
             image: yolov5m
             description: YOLOv5m COCO object detection
+          - model: yolov6n
+            image: yolov6n
+            description: YOLOv6n COCO object detection
 
     steps:
       - name: Checkout
