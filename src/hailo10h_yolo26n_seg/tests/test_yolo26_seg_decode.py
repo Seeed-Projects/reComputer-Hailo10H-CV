@@ -103,6 +103,23 @@ class Yolo26SegDecodeTest(unittest.TestCase):
         self.assertGreater(int(image[30:40, 20:30].sum()), 0)
         self.assertEqual(int(image[0:5, 0:5].sum()), 0)
 
+
+    def test_sigmoid_saturates_without_overflow(self):
+        out = wd._sigmoid(np.array([-1000.0, -50.0, 0.0, 50.0, 1000.0], np.float32))
+        np.testing.assert_allclose(out, [0.0, 0.0, 0.5, 1.0, 1.0], atol=1e-6)
+
+    def test_probability_head_skips_sigmoid(self):
+        """A compile that ships an activated score head must not be re-sigmoided."""
+        endnodes = _endnodes(4)
+        # Replace the three score heads with probabilities (0.9 hot, else 0.0).
+        for idx in range(3, 6):
+            endnodes[idx] = np.clip(endnodes[idx] * 0.0, 0.0, 1.0)
+            endnodes[idx][CELL[0], CELL[1], HOT_CLASS] = 0.9
+        boxes, scores, classes, _ = wd.post_process_hailo(endnodes, 0.25, 0.45, INPUT, INPUT)
+        self.assertIsNotNone(boxes)
+        self.assertEqual(int(classes[0]), HOT_CLASS)
+        self.assertAlmostEqual(float(scores[0]), 0.9, places=5)
+
     def test_coco_class_list(self):
         self.assertEqual(wd.COCO_CLASSES[0], "person")
         self.assertEqual(len(wd.COCO_CLASSES), CLASSES)

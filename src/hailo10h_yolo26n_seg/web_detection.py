@@ -782,7 +782,19 @@ def _primary_output_tensor(hailo_output):
 
 
 def _sigmoid(x):
-    return 1 / (1 + np.exp(-x))
+    """Numerically stable logistic.
+
+    The dequantized heads can hold values far outside float32's exp range
+    (|x| > 88): 1 / (1 + exp(-x)) overflows there and emits a RuntimeWarning,
+    this form saturates cleanly at 0/1 instead.
+    """
+    x = np.asarray(x, dtype=np.float32)
+    out = np.empty_like(x)
+    pos = x >= 0
+    out[pos] = 1.0 / (1.0 + np.exp(-x[pos]))
+    ex = np.exp(x[~pos])
+    out[~pos] = ex / (1.0 + ex)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -791,10 +803,12 @@ def _sigmoid(x):
 # Ported from hailo_model_zoo core/postprocessing (meta_arch "yolo26_seg",
 # base/yolo26_seg.yaml). The HEF exposes 10 heads, no on-chip NMS:
 #   3 strides (32/16/8), feature maps 20x20 / 40x40 / 80x80, each with:
-#     bbox   (BS, F, F, 64)   one2one distances: l, t, r, b x 16 bins
-#     score  (BS, F, F, 80)   per-class logits (sigmoid on CPU)
-#     mask   (BS, F, F, 32)   mask coefficients
-#   plus proto (BS, 160, 160, 32).
+#     bbox   (F, F, 4)    one2one distances: l, t / r, b (regression_length=1)
+#     score  (F, F, 80)   per-class scores (logits unless already activated)
+#     mask   (F, F, 32)   mask coefficients
+#   plus proto (160, 160, 32).
+# Compiles differ: some ship a DFL bbox head (F, F, 64) and an already
+# activated score head. Each is detected from the tensor itself.
 #
 # YOLO26 is "one2one": ONE prediction per grid cell (no anchors, no NMS).
 # Decode follows YoloPostProc._yolo6_decode:
@@ -934,10 +948,17 @@ def post_process_hailo(hailo_output, obj_thresh, nms_thresh, input_h, input_w):
 
     # Per-stride decode, concatenated in stride 32 -> 16 -> 8 order.
     all_boxes, all_scores, all_coeffs = [], [], []
+    sigmoid_applied = False
     for i, stride in enumerate(_Y26_STRIDES):
         fh, fw, _ = bboxes[i].shape
         boxes = _decode_yolo26_boxes(bboxes[i], stride)          # (F*F, 4)
-        sc = _sigmoid(scores_raw[i].reshape(-1, _Y26_CLASSES))   # (F*F, 80)
+        raw = np.asarray(scores_raw[i], dtype=np.float32)
+        # The zoo declares sigmoid off-device, but a compile may ship the head
+        # already activated. Values outside [0, 1] mean raw logits.
+        activated = bool(raw.min() >= -1e-3 and raw.max() <= 1.0 + 1e-3)
+        sigmoid_applied = sigmoid_applied or not activated
+        flat = raw.reshape(-1, _Y26_CLASSES)
+        sc = flat if activated else _sigmoid(flat)               # (F*F, 80)
         cf = masks_raw[i].reshape(-1, 32)                        # (F*F, 32)
         all_boxes.append(boxes)
         all_scores.append(sc)
@@ -947,7 +968,20 @@ def post_process_hailo(hailo_output, obj_thresh, nms_thresh, input_h, input_w):
     coeffs = np.concatenate(all_coeffs, axis=0)      # (A, 32)
 
     if not _SEG_OUTPUT_LOGGED:
-        print(f"[YOLO26-seg] anchors={len(boxes)}, proto={proto.shape}", flush=True)
+        # SOP 14.5: log the value range of every tensor once so wrong value
+        # semantics (quantized reads, double activation) are visible.
+        def _rng(a):
+            a = np.asarray(a, dtype=np.float32)
+            return f"{float(a.min()):.3g}..{float(a.max()):.3g}"
+
+        print(f"[YOLO26-seg] anchors={len(boxes)}, proto={proto.shape} "
+              f"proto_range={_rng(proto)}", flush=True)
+        print(f"[YOLO26-seg] box_range={[_rng(b) for b in bboxes]} "
+              f"score_range={[_rng(s) for s in scores_raw]} "
+              f"coeff_range={[_rng(m) for m in masks_raw]}", flush=True)
+        print(f"[YOLO26-seg] score sigmoid "
+              f"{'applied' if sigmoid_applied else 'skipped (already probabilities)'}, "
+              f"decoded scores {_rng(scores)}, boxes {_rng(boxes)}", flush=True)
         _SEG_OUTPUT_LOGGED = True
 
     # ultralytics get_topk_index (port of yolo26_filter): two-stage top-k
