@@ -81,6 +81,30 @@ class Yolov6DecodeTest(unittest.TestCase):
         self.assertEqual(int(classes[0]), 7)
         np.testing.assert_allclose(boxes[0], EXPECTED_BOX, atol=1e-3)
 
+    def test_device_ragged_payload(self):
+        """The HEF returns the on-chip NMS result as a ragged NMS-by-score list
+        wrapped in the vstream dict (device log:
+        `layout=on-chip NMS, outputs=[('ragged',)]`)."""
+        ragged = [np.zeros((0, 5), np.float32) for _ in range(CLASSES)]
+        ragged[7] = np.asarray([ROW], np.float32)
+        boxes, classes, scores = self.decode({"yolov6n/nms": ragged})
+        self.assertEqual(int(classes[0]), 7)
+        self.assertAlmostEqual(float(scores[0]), 0.9, places=5)
+        np.testing.assert_allclose(boxes[0], EXPECTED_BOX, atol=1e-3)
+
+    def test_device_ragged_payload_multi_class(self):
+        ragged = [np.zeros((0, 5), np.float32) for _ in range(CLASSES)]
+        ragged[3] = np.asarray([[0.1, 0.1, 0.2, 0.2, 0.9],
+                                [0.3, 0.3, 0.4, 0.4, 0.5]], np.float32)
+        ragged[12] = np.asarray([[0.5, 0.5, 0.7, 0.7, 0.8]], np.float32)
+        boxes, classes, scores = self.decode({"yolov6n/nms": ragged})
+        self.assertEqual(len(boxes), 3)
+        self.assertEqual(sorted(set(int(c) for c in classes)), [3, 12])
+
+    def test_empty_ragged_payload_returns_none(self):
+        ragged = [np.zeros((0, 5), np.float32) for _ in range(CLASSES)]
+        self.assertIsNone(self.decode({"yolov6n/nms": ragged})[0])
+
     def test_score_threshold_drops_the_detection(self):
         buf = np.concatenate(([1.0], [0.1, 0.2, 0.5, 0.6, 0.05])).astype(np.float32)
         self.assertIsNone(self.decode(buf)[0])
