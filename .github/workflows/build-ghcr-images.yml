@@ -64,6 +64,9 @@ on:
           - yolov5s
           - yolov5m
           - yolov6n
+          - yolo26n
+          - yolo26s
+          - yolo26m
 
 permissions:
   contents: read
@@ -223,6 +226,15 @@ jobs:
           - model: yolov6n
             image: yolov6n
             description: YOLOv6n COCO object detection
+          - model: yolo26n
+            image: yolo26n
+            description: YOLO26n COCO object detection
+          - model: yolo26s
+            image: yolo26s
+            description: YOLO26s COCO object detection
+          - model: yolo26m
+            image: yolo26m
+            description: YOLO26m COCO object detection
 
     steps:
       - name: Checkout
