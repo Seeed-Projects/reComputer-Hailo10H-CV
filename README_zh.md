@@ -43,6 +43,9 @@ reComputer-Hailo10H-CV/
 | [**YOLO26n-seg**](src/hailo10h_yolo26n_seg/) | 实例分割 | 2.7M | 640×640 | — | [来源](https://github.com/hailo-ai/hailo_model_zoo) |
 | [**YOLO26s-seg**](src/hailo10h_yolo26s_seg/) | 实例分割 | 10.4M | 640×640 | — | [来源](https://github.com/hailo-ai/hailo_model_zoo) |
 | [**YOLO26m-seg**](src/hailo10h_yolo26m_seg/) | 实例分割 | 23.6M | 640×640 | — | [来源](https://github.com/hailo-ai/hailo_model_zoo) |
+| [**YOLOv8n-seg**](src/hailo10h_yolov8n_seg/) | 实例分割 | 3.4M | 640×640 | — | [来源](https://github.com/hailo-ai/hailo_model_zoo) |
+| [**YOLOv8s-seg**](src/hailo10h_yolov8s_seg/) | 实例分割 | 11.8M | 640×640 | — | [来源](https://github.com/hailo-ai/hailo_model_zoo) |
+| [**YOLOv8m-seg**](src/hailo10h_yolov8m_seg/) | 实例分割 | 27.3M | 640×640 | — | [来源](https://github.com/hailo-ai/hailo_model_zoo) |
 
 ## 快速开始
 

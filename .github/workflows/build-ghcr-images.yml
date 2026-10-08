@@ -50,6 +50,9 @@ on:
           - yolov5n_seg
           - yolov5s_seg
           - yolov5m_seg
+          - yolov8n_seg
+          - yolov8s_seg
+          - yolov8m_seg
           - centerpose_regnetx_800mf
           - vit_pose_small
           - vit_pose_small_bn
@@ -184,6 +187,15 @@ jobs:
           - model: yolov5m_seg
             image: yolov5m_seg
             description: YOLOv5m-seg instance segmentation
+          - model: yolov8n_seg
+            image: yolov8n_seg
+            description: YOLOv8n-seg instance segmentation
+          - model: yolov8s_seg
+            image: yolov8s_seg
+            description: YOLOv8s-seg instance segmentation
+          - model: yolov8m_seg
+            image: yolov8m_seg
+            description: YOLOv8m-seg instance segmentation
           - model: centerpose_regnetx_800mf
             image: centerpose_regnetx_800mf
             description: CenterPose RegNetX-800MF multi-person pose estimation

@@ -43,6 +43,9 @@ reComputer-Hailo10H-CV/
 | [**YOLO26n-seg**](src/hailo10h_yolo26n_seg/) | Instance Segmentation | 2.7M | 640×640 | — | [Source](https://github.com/hailo-ai/hailo_model_zoo) |
 | [**YOLO26s-seg**](src/hailo10h_yolo26s_seg/) | Instance Segmentation | 10.4M | 640×640 | — | [Source](https://github.com/hailo-ai/hailo_model_zoo) |
 | [**YOLO26m-seg**](src/hailo10h_yolo26m_seg/) | Instance Segmentation | 23.6M | 640×640 | — | [Source](https://github.com/hailo-ai/hailo_model_zoo) |
+| [**YOLOv8n-seg**](src/hailo10h_yolov8n_seg/) | Instance Segmentation | 3.4M | 640×640 | — | [Source](https://github.com/hailo-ai/hailo_model_zoo) |
+| [**YOLOv8s-seg**](src/hailo10h_yolov8s_seg/) | Instance Segmentation | 11.8M | 640×640 | — | [Source](https://github.com/hailo-ai/hailo_model_zoo) |
+| [**YOLOv8m-seg**](src/hailo10h_yolov8m_seg/) | Instance Segmentation | 27.3M | 640×640 | — | [Source](https://github.com/hailo-ai/hailo_model_zoo) |
 
 ## Quick Start
 
