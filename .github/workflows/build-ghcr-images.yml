@@ -74,6 +74,10 @@ on:
           - yolov10s
           - yolov10b
           - yolov10x
+          - yolov11n_obb
+          - yolov11s_obb
+          - yolov11m_obb
+          - yolov11x_obb
 
 permissions:
   contents: read
@@ -263,6 +267,18 @@ jobs:
           - model: yolov10x
             image: yolov10x
             description: YOLOv10x COCO object detection
+          - model: yolov11n_obb
+            image: yolov11n_obb
+            description: YOLOv11n-OBB oriented object detection
+          - model: yolov11s_obb
+            image: yolov11s_obb
+            description: YOLOv11s-OBB oriented object detection
+          - model: yolov11m_obb
+            image: yolov11m_obb
+            description: YOLOv11m-OBB oriented object detection
+          - model: yolov11x_obb
+            image: yolov11x_obb
+            description: YOLOv11x-OBB oriented object detection
 
     steps:
       - name: Checkout
