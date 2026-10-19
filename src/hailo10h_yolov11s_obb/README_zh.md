@@ -52,9 +52,9 @@ sudo docker run --rm \
 
 浏览器打开 `http://<BOARD_IP>:8000`。
 
-仓库自带的演示视频是街景，而 DOTA 是航拍数据集，因此在演示视频上检测结果会很少；
-请用一张航拍图通过下面的 REST API 核对旋转框与角度。使用 USB 摄像头时挂载
-`/dev/video0`，并把 `--video_path ...` 换成 `--camera_id 0`。
+仓库自带的演示视频是约 6 秒的**航拍（无人机）素材**，因此 DOTA 训练的模型能直接在预览里
+看到车辆等空中目标的旋转框；不属于 DOTA 类别的无人机数据集类别（如行人）不会报出。
+使用 USB 摄像头时挂载 `/dev/video0`，并把 `--video_path ...` 换成 `--camera_id 0`。
 
 ## REST API
 

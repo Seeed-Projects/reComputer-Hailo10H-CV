@@ -55,9 +55,10 @@ sudo docker run --rm \
 
 Open `http://<BOARD_IP>:8000`.
 
-The demo clip is a street video while DOTA is an aerial dataset, so few
-detections are expected on it; use an aerial image through the REST API (below)
-to verify boxes and angles. For a USB camera, mount `/dev/video0` and replace
+The bundled clip is a ~6 s **aerial (drone) sample**, so the DOTA-trained model
+detects vehicles and other aerial objects directly and the rotated boxes show up
+in the preview. Drone-dataset classes that are not part of DOTA (e.g.
+pedestrians) are not reported. For a USB camera, mount `/dev/video0` and replace
 `--video_path ...` with `--camera_id 0`.
 
 ## REST API
