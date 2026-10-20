@@ -78,6 +78,7 @@ on:
           - yolov11s_obb
           - yolov11m_obb
           - yolov11x_obb
+          - yolo26l_seg
 
 permissions:
   contents: read
@@ -279,6 +280,9 @@ jobs:
           - model: yolov11x_obb
             image: yolov11x_obb
             description: YOLOv11x-OBB oriented object detection
+          - model: yolo26l_seg
+            image: yolo26l_seg
+            description: YOLO26l-seg instance segmentation
 
     steps:
       - name: Checkout
