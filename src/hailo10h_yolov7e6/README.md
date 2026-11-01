@@ -1,0 +1,105 @@
+# YOLOv7e6 on CM5 + Hailo-10H
+
+YOLOv7e6 performs COCO 80-class object detection on **Hailo-10H** through
+HailoRT. The HEF runs NMS on-chip (HPP, `meta_arch=yolov5`) and exposes a single
+output vstream; the application parses the compact NMS-by-class buffer HailoRT
+5.1.1 returns and keeps handlers for the other HailoRT NMS layouts. The FastAPI
+service provides image prediction, video and camera input, an MJPEG preview and
+offline video analysis.
+
+## Compatibility
+
+| Component | Version |
+|---|---|
+| Accelerator | Hailo-10H PCIe (`/dev/hailo0`) |
+| HailoRT host/runtime | 5.1.1 |
+| Python | 3.13, aarch64 |
+| Input | 1280x1280x3 RGB (normalize_in_net mean 0 / std 255, padding 114) |
+| Output | on-chip NMS, 80x5x80 (max 80 boxes per class) |
+| Classes | 80 (COCO, 0-indexed) |
+| Parameters | 97.20M |
+| Operations | 515.12G |
+| COCO mAP (full precision) | 55.4 (hardware 53.1) |
+| FPS on Hailo-10H (batch 1) | 16.4 |
+| HEF | Hailo Model Zoo v5.4.0 (Hailo-10H), 73,072,640 bytes |
+| Model licence | GPL-3.0 (upstream: WongKinYiu/yolov7) |
+
+HEF SHA256: `972fbd160c84aab5797e52cd28680653359edd22cfc4b4ae732b463b0f46f15a`
+
+The host driver, firmware, `libhailort.so`, and Python wheel must use the same
+HailoRT major/minor version.
+
+## Build
+
+From the repository root:
+
+```bash
+sudo docker build -f docker/hailo10h/yolov7e6.dockerfile \
+  -t yolov7e6:latest \
+  src/hailo10h_yolov7e6
+```
+
+## Run the demo video
+
+```bash
+sudo docker run --rm \
+  --name cm5-hailo10h-yolov7e6 \
+  --privileged \
+  --net=host \
+  -e PYTHONUNBUFFERED=1 \
+  --device /dev/hailo0:/dev/hailo0 \
+  -v /usr/lib/libhailort.so.5.1.1:/usr/lib/libhailort.so.5.1.1:ro \
+  -v /usr/lib/libhailort.so:/usr/lib/libhailort.so:ro \
+  ghcr.io/seeed-projects/recomputer-hailo10h-cv/yolov7e6:latest \
+  python web_detection.py --model_path model/yolov7e6.hef --video_path video/test.mp4
+```
+
+Open `http://<BOARD_IP>:8000`.
+
+For a USB camera, mount `/dev/video0` and replace `--video_path ...` with
+`--camera_id 0`.
+
+## REST API
+
+```bash
+curl -X POST "http://<BOARD_IP>:8000/api/models/yolov7e6/predict" \
+  -F "file=@bus.jpg" -F "conf=0.25"
+```
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/` | GET | Web preview UI |
+| `/api/models/yolov7e6/predict` | POST | Detections (JSON) |
+| `/api/video_feed` | GET | MJPEG preview stream |
+| `/api/config` | GET / POST | Read or change runtime thresholds |
+| `/api/video/upload` | POST | Source video upload |
+| `/api/video/analyze` | POST | Start offline video analysis |
+| `/api/video/status` | GET | Read analysis progress |
+| `/api/video/download/{filename}` | GET | Download the annotated result |
+
+## Implementation notes
+
+- The ALLS recipe is `change_output_activation(sigmoid)` plus
+  `nms_postprocess(<model>_nms_config.json, meta_arch=yolov5, engine=cpu)`;
+  the NMS config uses `nms_scores_th 0.2`, `nms_iou_th 0.6` and
+  `max_proposals_per_class 80`, so the host decodes nothing and runs no NMS.
+- HPP output on HailoRT 5.1.1 is the flat compact NMS-by-class buffer (per
+  class: detection count followed by that many `[ymin, xmin, ymax, xmax,
+  score]` rows, all normalized to [0, 1]). Fixed-stride readers misalign every
+  class after the first; `_per_class_iterable` also keeps handlers for the
+  ragged NMS-by-score and dense `(1,C,5,D)` / `(1,C,D,5)` layouts.
+- Pre-processing letterboxes to 1280x1280x3 with gray (114) padding, converts BGR
+  to RGB and feeds raw uint8; the `/255` normalization is compiled into the HEF.
+- `cls_id` (0..79) indexes the standard COCO class list directly.
+- The first-inference layout log is disabled in production
+  (`_OUTPUT_LOGGED = True`); set it to `False` to dump the raw output
+  type/shape/range and per-class rows when validating a new HEF (SOP §10/§14).
+
+## Hardware acceptance checklist
+
+1. `hailortcli --version` reports 5.1.1 and `/dev/hailo0` exists.
+2. The startup log reports the HEF input size (`Model input size: 1280x1280`).
+3. The demo video shows COCO boxes with class labels.
+4. `POST /api/models/yolov7e6/predict` returns detections with class,
+   confidence and box.
+5. USB camera mode keeps the preview live without stale frames.

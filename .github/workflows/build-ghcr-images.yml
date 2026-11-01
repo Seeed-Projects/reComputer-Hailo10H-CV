@@ -79,6 +79,10 @@ on:
           - yolov11m_obb
           - yolov11x_obb
           - yolo26l_seg
+          - yolov7
+          - yolov7_tiny
+          - yolov7e6
+          - yolov7x
 
 permissions:
   contents: read
@@ -283,6 +287,18 @@ jobs:
           - model: yolo26l_seg
             image: yolo26l_seg
             description: YOLO26l-seg instance segmentation
+          - model: yolov7
+            image: yolov7
+            description: YOLOv7 COCO object detection
+          - model: yolov7_tiny
+            image: yolov7_tiny
+            description: YOLOv7-tiny COCO object detection
+          - model: yolov7e6
+            image: yolov7e6
+            description: YOLOv7e6 COCO object detection
+          - model: yolov7x
+            image: yolov7x
+            description: YOLOv7x COCO object detection
 
     steps:
       - name: Checkout
