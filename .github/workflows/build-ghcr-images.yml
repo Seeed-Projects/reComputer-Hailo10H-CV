@@ -83,6 +83,8 @@ on:
           - yolov7_tiny
           - yolov7e6
           - yolov7x
+          - depth_anything_vits
+          - depth_anything_v2_vits
 
 permissions:
   contents: read
@@ -299,6 +301,12 @@ jobs:
           - model: yolov7x
             image: yolov7x
             description: YOLOv7x COCO object detection
+          - model: depth_anything_vits
+            image: depth_anything_vits
+            description: Depth-Anything-ViTS relative depth estimation
+          - model: depth_anything_v2_vits
+            image: depth_anything_v2_vits
+            description: Depth-Anything-V2-ViTS relative depth estimation
 
     steps:
       - name: Checkout
