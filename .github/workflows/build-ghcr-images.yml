@@ -85,6 +85,7 @@ on:
           - yolov7x
           - depth_anything_vits
           - depth_anything_v2_vits
+          - scdepthv3
 
 permissions:
   contents: read
@@ -307,6 +308,9 @@ jobs:
           - model: depth_anything_v2_vits
             image: depth_anything_v2_vits
             description: Depth-Anything-V2-ViTS relative depth estimation
+          - model: scdepthv3
+            image: scdepthv3
+            description: SCDepthV3 monocular depth estimation
 
     steps:
       - name: Checkout

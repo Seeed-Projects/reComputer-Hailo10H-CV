@@ -1,0 +1,109 @@
+# SCDepthV3 on CM5 + Hailo-10H
+
+SCDepthV3 performs monocular relative-depth estimation for indoor scenes on
+**Hailo-10H** through HailoRT. The HEF takes a 256x320 RGB frame and returns a
+256x320x1 raw tensor; the app decodes it to relative depth with
+`depth = 1 / (sigmoid(raw) * 10 + 0.009)`, restores the map to the original
+frame coordinates, and renders a pseudo-color (TURBO) overlay. The FastAPI
+service supports images, video files, USB cameras, an MJPEG preview, offline
+video analysis, and a REST prediction endpoint.
+
+## Compatibility
+
+| Component | Version |
+|---|---|
+| Accelerator | Hailo-10H PCIe (`/dev/hailo0`) |
+| HailoRT host/runtime | 5.1.1 |
+| Python | 3.13, aarch64 |
+| Input | 256x320x3 RGB (`normalize_in_net`, mean 114.75 / std 57.375) |
+| Output | Relative depth map 256x320x1 (decoded from raw logits) |
+| Parameters | 14.8M |
+| Operations | 10.7G |
+| RMSE (full precision) | 0.481 |
+| HEF | Hailo Model Zoo v5.4.0, Hailo-10H (11,579,392 bytes) |
+
+The host driver, firmware, `libhailort.so`, and Python wheel must use the same
+HailoRT major/minor version.
+
+## Build
+
+```bash
+sudo docker build -f docker/hailo10h/scdepthv3.dockerfile \
+  -t scdepthv3:latest \
+  src/hailo10h_scdepthv3
+```
+
+## Run the demo video
+
+```bash
+sudo docker run --rm \
+  --name cm5-hailo10h-scdepthv3 \
+  --privileged \
+  --net=host \
+  -e PYTHONUNBUFFERED=1 \
+  --device /dev/hailo0:/dev/hailo0 \
+  -v /usr/lib/libhailort.so.5.1.1:/usr/lib/libhailort.so.5.1.1:ro \
+  -v /usr/lib/libhailort.so:/usr/lib/libhailort.so:ro \
+  ghcr.io/seeed-projects/recomputer-hailo10h-cv/scdepthv3:latest \
+  python web_detection.py --model_path model/scdepthv3.hef --video_path video/test.mp4
+```
+
+Open `http://<BOARD_IP>:8000`.
+
+For a USB camera, mount `/dev/video0` and replace `--video_path ...` with
+`--camera_id 0`.
+
+## REST API
+
+```bash
+curl -X POST "http://<BOARD_IP>:8000/api/models/scdepthv3/predict" \
+  -F "file=@test.jpg"
+```
+
+The response keeps the YOLO-style `predictions` list plus a `depth` statistics
+object:
+
+```json
+{
+  "class": "depth",
+  "confidence": 1.0,
+  "min_depth": 0.12,
+  "max_depth": 8.4,
+  "mean_depth": 1.9,
+  "median_depth": 1.5,
+  "valid_pixels": 921600
+}
+```
+
+Depth values are **relative**, not metric meters.
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/` | GET | Web preview UI |
+| `/api/models/scdepthv3/predict` | POST | Depth statistics (JSON) |
+| `/api/video_feed` | GET | MJPEG with pseudo-color depth overlay |
+| `/api/config` | GET / POST | Read or change the overlay alpha |
+| `/api/video/upload` | POST | Upload a source video |
+| `/api/video/analyze` | POST | Start offline video analysis |
+| `/api/video/status` | GET | Read analysis progress |
+| `/api/video/download/{filename}` | GET | Download the annotated result |
+
+## Implementation notes
+
+- **Relative depth**: the raw output is logits. The app applies
+  `depth = 1 / (sigmoid(raw) * 10 + 0.009)` and normalizes each frame with the
+  2nd/98th percentiles before applying the TURBO colormap.
+- The decoded map is cropped to the letterbox content area and resized to the
+  original frame, so the overlay aligns with the preview.
+- `normalize_in_net` mean/std are compiled into the HEF; feed raw uint8 RGB
+  after letterboxing.
+- No on-chip post-processing. The wrapper requests FLOAT32 vstreams so the host
+  receives dequantized logits.
+- The HEF input size is read from the model at startup (256x320).
+- A non-square model output may arrive transposed as (320, 256); the decoder
+  transposes it before applying the sigmoid mapping.
+
+## Model source
+
+[Hailo Model Zoo v5.4.0, Hailo-10H](https://github.com/hailo-ai/hailo_model_zoo/blob/master/docs/public_models/HAILO10H/HAILO10H_depth_estimation.rst)
+(model `scdepthv3`, source: [JiawangBian/sc_depth_pl](https://github.com/JiawangBian/sc_depth_pl/)).
