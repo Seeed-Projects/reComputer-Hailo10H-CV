@@ -86,6 +86,7 @@ on:
           - depth_anything_vits
           - depth_anything_v2_vits
           - scdepthv3
+          - fast_depth
 
 permissions:
   contents: read
@@ -311,6 +312,9 @@ jobs:
           - model: scdepthv3
             image: scdepthv3
             description: SCDepthV3 monocular depth estimation
+          - model: fast_depth
+            image: fast_depth
+            description: FastDepth monocular depth estimation
 
     steps:
       - name: Checkout
