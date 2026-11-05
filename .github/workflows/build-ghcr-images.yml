@@ -87,6 +87,7 @@ on:
           - depth_anything_v2_vits
           - scdepthv3
           - fast_depth
+          - unet_mobilenet_v2
 
 permissions:
   contents: read
@@ -315,6 +316,9 @@ jobs:
           - model: fast_depth
             image: fast_depth
             description: FastDepth monocular depth estimation
+          - model: unet_mobilenet_v2
+            image: unet_mobilenet_v2
+            description: U-Net MobileNet v2 semantic segmentation
 
     steps:
       - name: Checkout
