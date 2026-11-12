@@ -88,6 +88,7 @@ on:
           - scdepthv3
           - fast_depth
           - unet_mobilenet_v2
+          - resnet_v1_18
 
 permissions:
   contents: read
@@ -319,6 +320,9 @@ jobs:
           - model: unet_mobilenet_v2
             image: unet_mobilenet_v2
             description: U-Net MobileNet v2 semantic segmentation
+          - model: resnet_v1_18
+            image: resnet_v1_18
+            description: ResNet-18 ImageNet classification
 
     steps:
       - name: Checkout
