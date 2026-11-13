@@ -39,6 +39,10 @@ on:
           - yolact_regnetx_800mf
           - yolact_regnetx_1_6gf
           - tiny_yolov3
+          - yolov3
+          - yolov3_416
+          - yolov3_gluon
+          - yolov3_gluon_416
           - tiny_yolov4
           - yolov11n
           - yolov11s
@@ -178,6 +182,18 @@ jobs:
           - model: tiny_yolov3
             image: tiny_yolov3
             description: Tiny-YOLOv3 COCO object detection
+          - model: yolov3
+            image: yolov3
+            description: YOLOv3 COCO object detection
+          - model: yolov3_416
+            image: yolov3_416
+            description: YOLOv3-416 COCO object detection
+          - model: yolov3_gluon
+            image: yolov3_gluon
+            description: YOLOv3-Gluon COCO object detection
+          - model: yolov3_gluon_416
+            image: yolov3_gluon_416
+            description: YOLOv3-Gluon-416 COCO object detection
           - model: tiny_yolov4
             image: tiny_yolov4
             description: Tiny-YOLOv4 COCO object detection
