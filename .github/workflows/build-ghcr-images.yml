@@ -39,6 +39,8 @@ on:
           - yolact_regnetx_800mf
           - yolact_regnetx_1_6gf
           - tiny_yolov3
+          - bytetrack_s_mot17
+          - bytetrack_tiny_mot17
           - yolov3
           - yolov3_416
           - yolov3_gluon
@@ -182,6 +184,12 @@ jobs:
           - model: tiny_yolov3
             image: tiny_yolov3
             description: Tiny-YOLOv3 COCO object detection
+          - model: bytetrack_s_mot17
+            image: bytetrack_s_mot17
+            description: ByteTrack-S MOT17 person tracking
+          - model: bytetrack_tiny_mot17
+            image: bytetrack_tiny_mot17
+            description: ByteTrack-Tiny MOT17 person tracking
           - model: yolov3
             image: yolov3
             description: YOLOv3 COCO object detection
