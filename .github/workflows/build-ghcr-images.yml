@@ -51,8 +51,6 @@ on:
           - yolov11m
           - yolov11l
           - yolov11x
-          - yolo_world_v2s
-          - yolo_world_v2m
           - centernet_resnet_v1_18_postprocess
           - centernet_resnet_v1_50_postprocess
           - yolov5n_seg
@@ -222,12 +220,6 @@ jobs:
           - model: yolov11x
             image: yolov11x
             description: YOLOv11x COCO object detection
-          - model: yolo_world_v2s
-            image: yolo_world_v2s
-            description: YOLO-World v2s zero-shot object detection
-          - model: yolo_world_v2m
-            image: yolo_world_v2m
-            description: YOLO-World v2m zero-shot object detection
           - model: centernet_resnet_v1_18_postprocess
             image: centernet_resnet_v1_18_postprocess
             description: CenterNet (resnet_v1_18) COCO object detection
