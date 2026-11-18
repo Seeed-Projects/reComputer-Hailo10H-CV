@@ -929,16 +929,16 @@ def preprocess_frame(frame, co_helper):
     exact ratio + padding for un-letterboxing independent of shared co_helper
     state.
 
-    The HEF uses normalize_in_net with ImageNet RGB mean/std and
-    padding_color=114, so letterbox pads with gray (114) and the app feeds raw
-    uint8 RGB pixels — no manual normalization.
+    The YOLO-World HEF normalizes with mean 0 / std 255, so letterbox pads
+    with black (0) and the app feeds raw uint8 RGB pixels — no manual
+    normalization.
     """
     if getattr(co_helper, "letter_box_info_list", None) is not None:
         co_helper.letter_box_info_list.clear()
     img, ratio, (dw, dh) = co_helper.letter_box(
         im=frame.copy(),
         new_shape=(IMG_SIZE[1], IMG_SIZE[0]),
-        pad_color=(114, 114, 114),
+        pad_color=(0, 0, 0),
         info_need=True,
     )
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
